@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import tempfile
+import urllib.request
 
 from qgis.core import (
     QgsMapLayer, QgsWkbTypes, QgsCoordinateReferenceSystem,
@@ -17,6 +18,56 @@ from qgis.PyQt.QtCore import QSize
 
 
 _WGS84 = QgsCoordinateReferenceSystem("EPSG:4326")
+
+_PLUGIN_DIR = os.path.dirname(__file__)
+_LIB_DIR    = os.path.join(_PLUGIN_DIR, "lib")
+_LEAFLET_VERSION = "1.9.4"
+_LEAFLET_CDNS = [
+    "https://unpkg.com/leaflet@{v}/dist/leaflet.min.{ext}",
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/{v}/leaflet.min.{ext}",
+]
+
+
+def _get_leaflet_assets():
+    """
+    Return (css_str, js_str) for Leaflet, for inline embedding.
+
+    Priority:
+      1. Already cached in plugin lib/ directory.
+      2. Download from CDN and cache.
+      3. Return (None, None) — caller falls back to CDN <link>/<script> tags.
+    """
+    css_path = os.path.join(_LIB_DIR, f"leaflet-{_LEAFLET_VERSION}.min.css")
+    js_path  = os.path.join(_LIB_DIR, f"leaflet-{_LEAFLET_VERSION}.min.js")
+
+    if os.path.exists(css_path) and os.path.exists(js_path):
+        with open(css_path, encoding="utf-8") as f:
+            css = f.read()
+        with open(js_path, encoding="utf-8") as f:
+            js = f.read()
+        return css, js
+
+    # Attempt download
+    os.makedirs(_LIB_DIR, exist_ok=True)
+    v = _LEAFLET_VERSION
+    for cdn_tpl in _LEAFLET_CDNS:
+        try:
+            css_url = cdn_tpl.format(v=v, ext="css")
+            js_url  = cdn_tpl.format(v=v, ext="js")
+            with urllib.request.urlopen(css_url, timeout=15) as r:
+                css = r.read().decode("utf-8")
+            with urllib.request.urlopen(js_url, timeout=15) as r:
+                js = r.read().decode("utf-8")
+            # Cache for next export
+            with open(css_path, "w", encoding="utf-8") as f:
+                f.write(css)
+            with open(js_path, "w", encoding="utf-8") as f:
+                f.write(js)
+            return css, js
+        except Exception:
+            continue
+
+    return None, None
 
 
 def _color_to_hex(color: QColor) -> str:
@@ -328,10 +379,29 @@ class WebMapExporter:
         return [[min_y, min_x], [max_y, max_x]]
 
     def _render_html(self, layer_defs, bounds) -> str:
-        layers_json = json.dumps(layer_defs, separators=(",", ":"))
+        # Escape </script> in embedded JSON so it can't break the <script> block
+        layers_json = json.dumps(layer_defs, separators=(",", ":")).replace(
+            "</", "<\\/"
+        )
         bounds_json = json.dumps(bounds)
         include_basemap = "true" if self.include_basemap else "false"
         include_legend = "true" if self.include_layer_control else "false"
+
+        leaflet_css, leaflet_js = _get_leaflet_assets()
+        if leaflet_css and leaflet_js:
+            leaflet_head = (
+                f"<style>\n{leaflet_css}\n</style>\n"
+                f"<script>\n{leaflet_js}\n</script>"
+            )
+        else:
+            # CDN fallback — requires internet access when the HTML is opened
+            leaflet_head = (
+                '<link rel="stylesheet"'
+                ' href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"'
+                ' crossorigin=""/>\n'
+                '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"'
+                ' crossorigin=""></script>'
+            )
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -339,10 +409,7 @@ class WebMapExporter:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QGIS Web Map</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/sp38=" crossorigin=""></script>
+{leaflet_head}
 <style>
   html, body {{ margin: 0; padding: 0; height: 100%; font-family: sans-serif; }}
   #map {{ height: 100%; width: 100%; }}
