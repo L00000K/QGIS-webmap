@@ -111,16 +111,33 @@ def test_style_map_json_serialisable():
     style_map = {
         "type": "categorized",
         "field": "category",
-        "categories": {
-            "A": {"fillColor": "#ff0000", "fillOpacity": 0.8, "color": "#000", "weight": 1, "opacity": 1},
-            "B": {"fillColor": "#0000ff", "fillOpacity": 0.8, "color": "#000", "weight": 1, "opacity": 1},
-        },
-        "default": {"fillColor": "#888888", "fillOpacity": 0.5, "color": "#000", "weight": 1, "opacity": 1},
+        "entries": [
+            {"value": "A", "label": "Type A", "style": {"fillColor": "#ff0000", "fillOpacity": 0.8, "color": "#000", "weight": 1, "opacity": 1}},
+            {"value": "B", "label": "Type B", "style": {"fillColor": "#0000ff", "fillOpacity": 0.8, "color": "#000", "weight": 1, "opacity": 1}},
+        ],
+        "default": {},
     }
     dumped = json.dumps(style_map)
     loaded = json.loads(dumped)
     assert loaded["type"] == "categorized"
-    assert loaded["categories"]["A"]["fillColor"] == "#ff0000"
+    assert loaded["entries"][0]["style"]["fillColor"] == "#ff0000"
+    assert loaded["entries"][0]["label"] == "Type A"
+
+
+def test_graduated_style_map():
+    style_map = {
+        "type": "graduated",
+        "field": "value",
+        "entries": [
+            {"min": 0.0, "max": 10.0, "label": "0 – 10", "style": {"fillColor": "#ffffcc"}},
+            {"min": 10.0, "max": 20.0, "label": "10 – 20", "style": {"fillColor": "#fd8d3c"}},
+        ],
+        "default": {},
+    }
+    dumped = json.dumps(style_map)
+    loaded = json.loads(dumped)
+    assert loaded["entries"][1]["min"] == 10.0
+    assert loaded["entries"][1]["label"] == "10 – 20"
 
 
 def test_html_contains_leaflet():

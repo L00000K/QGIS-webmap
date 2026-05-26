@@ -104,13 +104,13 @@ def _extract_symbol_style(symbol) -> dict:
 def _build_style_map(layer) -> dict:
     """
     Returns a dict describing how to style the layer in JS.
-    Keys:
-      'type': 'single' | 'categorized' | 'graduated' | 'rule'
-      'style': {...}            (for single)
-      'field': str              (for categorized/graduated)
-      'categories': {val: style} (for categorized)
-      'ranges': [(min,max,style)] (for graduated)
-      'default': {...}
+
+    Common shape:
+      type: 'single' | 'categorized' | 'graduated' | 'rule'
+      entries: list of legend items (for multi-symbol renderers)
+      style: {...}   (for single)
+      field: str     (for categorized / graduated)
+      default: {...}
     """
     renderer = layer.renderer()
     if renderer is None:
@@ -123,39 +123,47 @@ def _build_style_map(layer) -> dict:
         }
 
     if isinstance(renderer, QgsCategorizedSymbolRenderer):
-        cats = {}
+        entries = []
         for cat in renderer.categories():
-            cats[str(cat.value())] = _extract_symbol_style(cat.symbol())
+            entries.append({
+                "value": str(cat.value()),
+                "label": cat.label() or str(cat.value()),
+                "style": _extract_symbol_style(cat.symbol()),
+            })
         return {
             "type": "categorized",
             "field": renderer.classAttribute(),
-            "categories": cats,
-            "default": _extract_symbol_style(renderer.symbol()) if renderer.symbol() else {},
+            "entries": entries,
+            "default": {},
         }
 
     if isinstance(renderer, QgsGraduatedSymbolRenderer):
-        ranges = []
+        entries = []
         for r in renderer.ranges():
-            ranges.append((r.lowerValue(), r.upperValue(), _extract_symbol_style(r.symbol())))
+            entries.append({
+                "min": r.lowerValue(),
+                "max": r.upperValue(),
+                "label": r.label() or f"{r.lowerValue()} – {r.upperValue()}",
+                "style": _extract_symbol_style(r.symbol()),
+            })
         return {
             "type": "graduated",
             "field": renderer.classAttribute(),
-            "ranges": ranges,
+            "entries": entries,
             "default": {},
         }
 
     if isinstance(renderer, QgsRuleBasedRenderer):
-        # Flatten rules: use first matching rule per feature
-        rules = []
+        entries = []
         for rule in renderer.rootRule().children():
-            rules.append({
-                "label": rule.label(),
+            entries.append({
+                "label": rule.label() or "Rule",
                 "style": _extract_symbol_style(rule.symbol()),
             })
         return {
             "type": "rule",
-            "rules": rules,
-            "default": rules[0]["style"] if rules else {},
+            "entries": entries,
+            "default": entries[0]["style"] if entries else {},
         }
 
     # Fallback
@@ -322,21 +330,8 @@ class WebMapExporter:
     def _render_html(self, layer_defs, bounds) -> str:
         layers_json = json.dumps(layer_defs, separators=(",", ":"))
         bounds_json = json.dumps(bounds)
-
-        basemap_js = ""
-        if self.include_basemap:
-            basemap_js = """
-  var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19
-  }).addTo(map);
-  var baseLayers = { "OpenStreetMap": osm };"""
-        else:
-            basemap_js = "  var baseLayers = {};"
-
-        layer_control_js = ""
-        if self.include_layer_control:
-            layer_control_js = "  L.control.layers(baseLayers, overlays, {collapsed: false}).addTo(map);"
+        include_basemap = "true" if self.include_basemap else "false"
+        include_legend = "true" if self.include_layer_control else "false"
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -349,12 +344,109 @@ class WebMapExporter:
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/sp38=" crossorigin=""></script>
 <style>
-  html, body {{ margin: 0; padding: 0; height: 100%; }}
+  html, body {{ margin: 0; padding: 0; height: 100%; font-family: sans-serif; }}
   #map {{ height: 100%; width: 100%; }}
+
+  /* ── Legend panel ─────────────────────────────────────────────── */
+  #legend {{
+    position: absolute;
+    top: 10px; right: 10px;
+    z-index: 1000;
+    background: rgba(255,255,255,0.96);
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    min-width: 180px;
+    max-width: 260px;
+    max-height: calc(100vh - 60px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }}
+  #legend-header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px 6px;
+    background: #f0f0f0;
+    border-bottom: 1px solid #ddd;
+    cursor: default;
+    user-select: none;
+    border-radius: 6px 6px 0 0;
+  }}
+  #legend-header span {{ font-weight: bold; font-size: 13px; color: #333; }}
+  #legend-toggle-all {{
+    font-size: 11px;
+    color: #555;
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+    background: #fff;
+    line-height: 1.4;
+  }}
+  #legend-toggle-all:hover {{ background: #e8e8e8; }}
+  #legend-body {{
+    overflow-y: auto;
+    padding: 4px 0;
+  }}
+  .legend-layer {{
+    padding: 0;
+  }}
+  .legend-layer-row {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+  }}
+  .legend-layer-row:hover {{ background: #f5f5f5; }}
+  .legend-layer-row input[type=checkbox] {{
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+  }}
+  .legend-layer-name {{
+    font-size: 12px;
+    color: #222;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }}
+  .legend-expand {{
+    font-size: 10px;
+    color: #888;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+  }}
+  .legend-entries {{
+    display: none;
+    padding: 0 0 3px 26px;
+  }}
+  .legend-entries.open {{ display: block; }}
+  .legend-entry {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px 2px 0;
+  }}
+  .legend-entry-label {{
+    font-size: 11px;
+    color: #444;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }}
+  .legend-swatch svg {{ display: block; }}
+  .legend-layer.hidden .legend-layer-name {{ opacity: 0.45; }}
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="legend" style="display:none"></div>
 <script>
 (function() {{
   "use strict";
@@ -362,14 +454,21 @@ class WebMapExporter:
   var map = L.map('map');
   var bounds = {bounds_json};
   var LAYERS = {layers_json};
+  var INCLUDE_BASEMAP = {include_basemap};
+  var INCLUDE_LEGEND = {include_legend};
 
-{basemap_js}
+  // ── Basemap ──────────────────────────────────────────────────────────────
+  if (INCLUDE_BASEMAP) {{
+    L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    }}).addTo(map);
+  }}
 
-  // ── Marker shape helper ──────────────────────────────────────────────────
-  var SHAPES = {{
-    0: 'circle', 1: 'square', 2: 'diamond', 4: 'triangle', 5: 'triangle',
-    6: 'cross', 8: 'star'
-  }};
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function escHtml(s) {{
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }}
 
   function makeCircleMarker(latlng, style) {{
     return L.circleMarker(latlng, {{
@@ -382,24 +481,26 @@ class WebMapExporter:
     }});
   }}
 
-  // ── Style resolver ───────────────────────────────────────────────────────
   function resolveStyle(styleMap, props) {{
     var t = styleMap.type;
     if (t === 'single') return styleMap.style;
     if (t === 'categorized') {{
       var val = String(props[styleMap.field]);
-      return styleMap.categories[val] || styleMap.default || {{}};
+      for (var i = 0; i < styleMap.entries.length; i++) {{
+        if (styleMap.entries[i].value === val) return styleMap.entries[i].style;
+      }}
+      return styleMap.default || {{}};
     }}
     if (t === 'graduated') {{
       var v = parseFloat(props[styleMap.field]);
-      for (var i = 0; i < styleMap.ranges.length; i++) {{
-        var r = styleMap.ranges[i];
-        if (v >= r[0] && v <= r[1]) return r[2];
+      for (var i = 0; i < styleMap.entries.length; i++) {{
+        var e = styleMap.entries[i];
+        if (v >= e.min && v <= e.max) return e.style;
       }}
       return styleMap.default || {{}};
     }}
     if (t === 'rule') {{
-      return (styleMap.rules[0] && styleMap.rules[0].style) || styleMap.default || {{}};
+      return (styleMap.entries[0] && styleMap.entries[0].style) || styleMap.default || {{}};
     }}
     return {{}};
   }}
@@ -414,36 +515,69 @@ class WebMapExporter:
     }};
   }}
 
+  // ── Swatch SVG ───────────────────────────────────────────────────────────
+  function swatchSvg(geomType, style) {{
+    var W = 20, H = 16;
+    var svg = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg">';
+    if (geomType === 'point') {{
+      var r = Math.min(6, Math.max(3, (style.markerSize || 8) / 2));
+      var cx = W / 2, cy = H / 2;
+      svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '"'
+          + ' fill="' + escHtml(style.markerColor || '#3388ff') + '"'
+          + ' fill-opacity="' + (style.markerOpacity != null ? style.markerOpacity : 0.8) + '"'
+          + ' stroke="' + escHtml(style.markerStrokeColor || '#fff') + '"'
+          + ' stroke-width="1"/>';
+    }} else if (geomType === 'line') {{
+      var w = Math.min(5, Math.max(1, style.weight || 2));
+      svg += '<line x1="1" y1="' + (H/2) + '" x2="' + (W-1) + '" y2="' + (H/2) + '"'
+          + ' stroke="' + escHtml(style.color || '#3388ff') + '"'
+          + ' stroke-opacity="' + (style.opacity != null ? style.opacity : 1) + '"'
+          + ' stroke-width="' + w + '"/>';
+    }} else if (geomType === 'raster') {{
+      svg += '<defs><pattern id="hatch" patternUnits="userSpaceOnUse" width="4" height="4">'
+          + '<path d="M0,4 L4,0" stroke="#777" stroke-width="1"/></pattern></defs>'
+          + '<rect x="1" y="1" width="' + (W-2) + '" height="' + (H-2) + '"'
+          + ' fill="url(#hatch)" stroke="#999" stroke-width="1"/>';
+    }} else {{
+      svg += '<rect x="1" y="1" width="' + (W-2) + '" height="' + (H-2) + '"'
+          + ' fill="' + escHtml(style.fillColor || '#3388ff') + '"'
+          + ' fill-opacity="' + (style.fillOpacity != null ? style.fillOpacity : 0.4) + '"'
+          + ' stroke="' + escHtml(style.color || '#333') + '"'
+          + ' stroke-opacity="' + (style.opacity != null ? style.opacity : 1) + '"'
+          + ' stroke-width="' + Math.min(3, style.weight || 1) + '"/>';
+    }}
+    return svg + '</svg>';
+  }}
+
   // ── Layer builder ────────────────────────────────────────────────────────
-  var overlays = {{}};
+  var leafletLayers = [];
 
   function addVectorLayer(ld) {{
-    var leafletLayer;
+    var lfl;
     if (ld.geomType === 'point') {{
-      leafletLayer = L.geoJSON(ld.geojson, {{
+      lfl = L.geoJSON(ld.geojson, {{
         pointToLayer: function(feature, latlng) {{
-          var s = resolveStyle(ld.styleMap, feature.properties || {{}});
-          return makeCircleMarker(latlng, s);
+          return makeCircleMarker(latlng, resolveStyle(ld.styleMap, feature.properties || {{}}));
         }},
         onEachFeature: onEachFeature
       }});
     }} else {{
-      leafletLayer = L.geoJSON(ld.geojson, {{
+      lfl = L.geoJSON(ld.geojson, {{
         style: function(feature) {{
-          var s = resolveStyle(ld.styleMap, feature.properties || {{}});
-          return leafletPathStyle(s);
+          return leafletPathStyle(resolveStyle(ld.styleMap, feature.properties || {{}}));
         }},
         onEachFeature: onEachFeature
       }});
     }}
-    leafletLayer.addTo(map);
-    overlays[ld.name] = leafletLayer;
+    lfl.addTo(map);
+    leafletLayers.push(lfl);
+    return lfl;
   }}
 
   function addRasterLayer(ld) {{
-    var imgUrl = 'data:image/png;base64,' + ld.data;
-    var leafletLayer = L.imageOverlay(imgUrl, ld.bounds, {{opacity: 1}}).addTo(map);
-    overlays[ld.name] = leafletLayer;
+    var lfl = L.imageOverlay('data:image/png;base64,' + ld.data, ld.bounds, {{opacity: 1}}).addTo(map);
+    leafletLayers.push(lfl);
+    return lfl;
   }}
 
   function onEachFeature(feature, layer) {{
@@ -451,25 +585,136 @@ class WebMapExporter:
     var rows = Object.entries(feature.properties)
       .filter(function(e) {{ return e[1] != null; }})
       .map(function(e) {{
-        return '<tr><th>' + escHtml(String(e[0])) + '</th><td>' + escHtml(String(e[1])) + '</td></tr>';
+        return '<tr><th style="text-align:left;padding:2px 8px 2px 0;white-space:nowrap">'
+          + escHtml(e[0]) + '</th><td style="padding:2px 0">' + escHtml(e[1]) + '</td></tr>';
       }}).join('');
-    if (rows) {{
-      layer.bindPopup('<table style="font-size:13px;border-collapse:collapse">' + rows + '</table>');
-    }}
+    if (rows) layer.bindPopup('<table style="font-size:13px;border-collapse:collapse">' + rows + '</table>');
   }}
 
-  function escHtml(s) {{
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }}
-
-  // Add layers (bottom to top)
+  // Build Leaflet layers and collect metadata for legend
+  var legendItems = [];
   for (var i = 0; i < LAYERS.length; i++) {{
     var ld = LAYERS[i];
-    if (ld.kind === 'vector') addVectorLayer(ld);
-    else if (ld.kind === 'raster') addRasterLayer(ld);
+    var lfl = ld.kind === 'vector' ? addVectorLayer(ld) : addRasterLayer(ld);
+    legendItems.push({{ ld: ld, lfl: lfl }});
   }}
 
-{layer_control_js}
+  // ── Legend panel ─────────────────────────────────────────────────────────
+  if (INCLUDE_LEGEND && legendItems.length > 0) {{
+    var panel = document.getElementById('legend');
+    panel.style.display = 'flex';
+
+    // Header
+    var hdr = document.getElementById('legend-header') || document.createElement('div');
+    hdr.id = 'legend-header';
+    hdr.innerHTML = '<span>Layers</span><button id="legend-toggle-all">Hide all</button>';
+    panel.appendChild(hdr);
+
+    var body = document.createElement('div');
+    body.id = 'legend-body';
+    panel.appendChild(body);
+
+    var allVisible = true;
+    document.getElementById('legend-toggle-all').addEventListener('click', function() {{
+      allVisible = !allVisible;
+      this.textContent = allVisible ? 'Hide all' : 'Show all';
+      legendItems.forEach(function(item) {{
+        setLayerVisible(item, allVisible);
+      }});
+    }});
+
+    // Legend items are shown top-to-bottom (reverse of leafletLayers order)
+    var displayItems = legendItems.slice().reverse();
+
+    displayItems.forEach(function(item) {{
+      var ld = item.ld;
+      var sm = ld.styleMap || {{}};
+      var geomType = ld.kind === 'raster' ? 'raster' : ld.geomType;
+
+      // Primary swatch: use first entry or the single style
+      var primaryStyle = {{}};
+      if (sm.type === 'single') primaryStyle = sm.style || {{}};
+      else if (sm.entries && sm.entries.length) primaryStyle = sm.entries[0].style || {{}};
+
+      var hasEntries = sm.entries && sm.entries.length > 1;
+
+      var layerDiv = document.createElement('div');
+      layerDiv.className = 'legend-layer';
+
+      // Main row
+      var row = document.createElement('div');
+      row.className = 'legend-layer-row';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = true;
+      cb.title = 'Toggle layer visibility';
+
+      var swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      swatch.innerHTML = swatchSvg(geomType, primaryStyle);
+
+      var nameEl = document.createElement('span');
+      nameEl.className = 'legend-layer-name';
+      nameEl.title = ld.name;
+      nameEl.textContent = ld.name;
+
+      row.appendChild(cb);
+      row.appendChild(swatch);
+      row.appendChild(nameEl);
+
+      var entriesDiv = null;
+      if (hasEntries) {{
+        var expBtn = document.createElement('span');
+        expBtn.className = 'legend-expand';
+        expBtn.textContent = '▶';
+        row.appendChild(expBtn);
+
+        entriesDiv = document.createElement('div');
+        entriesDiv.className = 'legend-entries';
+
+        sm.entries.forEach(function(entry) {{
+          var eRow = document.createElement('div');
+          eRow.className = 'legend-entry';
+          var eSwatch = document.createElement('span');
+          eSwatch.className = 'legend-swatch';
+          eSwatch.innerHTML = swatchSvg(geomType, entry.style || {{}});
+          var eLabel = document.createElement('span');
+          eLabel.className = 'legend-entry-label';
+          eLabel.title = entry.label || '';
+          eLabel.textContent = entry.label || '';
+          eRow.appendChild(eSwatch);
+          eRow.appendChild(eLabel);
+          entriesDiv.appendChild(eRow);
+        }});
+
+        row.addEventListener('click', function(e) {{
+          if (e.target === cb) return;
+          var open = entriesDiv.classList.toggle('open');
+          expBtn.style.transform = open ? 'rotate(90deg)' : '';
+        }});
+      }}
+
+      // Checkbox toggles layer visibility
+      cb.addEventListener('change', function() {{
+        setLayerVisible(item, cb.checked);
+        layerDiv.classList.toggle('hidden', !cb.checked);
+      }});
+
+      layerDiv.appendChild(row);
+      if (entriesDiv) layerDiv.appendChild(entriesDiv);
+      body.appendChild(layerDiv);
+      item.checkbox = cb;
+      item.layerDiv = layerDiv;
+    }});
+  }}
+
+  function setLayerVisible(item, visible) {{
+    if (visible) item.lfl.addTo(map);
+    else map.removeLayer(item.lfl);
+    if (item.checkbox) item.checkbox.checked = visible;
+    if (item.layerDiv) item.layerDiv.classList.toggle('hidden', !visible);
+  }}
 
   // Fit map to data
   try {{ map.fitBounds(bounds, {{padding: [20, 20]}}); }}
