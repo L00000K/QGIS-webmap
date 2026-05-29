@@ -993,6 +993,8 @@ class WebMapExporter:
     ]
   }});
   var bounds = {bounds_json};
+  try {{ map.fitBounds(bounds, {{padding: [20, 20]}}); }}
+  catch(e) {{ map.setView([0, 0], 2); }}
   var LAYERS = {layers_json};
   var INCLUDE_BASEMAP = {include_basemap};
   var INCLUDE_LEGEND = {include_legend};
@@ -1813,9 +1815,6 @@ class WebMapExporter:
     if (first) updateCount(first);
   }})();
 
-  // Fit map to data
-  try {{ map.fitBounds(bounds, {{padding: [20, 20]}}); }}
-  catch(e) {{ map.setView([0, 0], 2); }}
 }})();
 </script>
 </body>
