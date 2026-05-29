@@ -619,11 +619,9 @@ class WebMapExporter:
         plugin_heads = "\n".join(filter(bool, [
             _plugin_block("fullscreen"),
             _plugin_block("minimap"),
-            _plugin_block("search"),
             _plugin_block("contextmenu"),
             _plugin_block("sidebar"),
             _plugin_block("measure"),
-            _plugin_block("geoman"),
         ]))
 
         return f"""<!DOCTYPE html>
@@ -830,26 +828,20 @@ class WebMapExporter:
   }}
   .filter-count {{ color: #888; font-size: 11px; }}
 
-  /* ── Filter toggle button ─────────────────────────────────────── */
-  #filter-toggle {{
-    position: absolute;
-    top: 80px; left: 10px;
-    z-index: 1000;
-    width: 34px; height: 34px;
+  /* ── Filter toggle button (Leaflet control) ───────────────────── */
+  .leaflet-control-filter {{
+    width: 30px; height: 30px;
     background: white;
-    border: 2px solid rgba(0,0,0,0.2);
-    border-radius: 4px;
-    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    border: none;
     cursor: pointer;
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
   }}
-  #filter-toggle:hover {{ background: #f4f4f4; }}
-  #filter-toggle.active {{
+  .leaflet-control-filter:hover {{ background: #f4f4f4; }}
+  .leaflet-control-filter.active {{
     background: #dde8ff;
-    border-color: rgba(50,100,255,0.4);
   }}
 
   /* ── Brand watermark ──────────────────────────────────────────── */
@@ -918,8 +910,7 @@ class WebMapExporter:
 <div id="sidebar" class="leaflet-sidebar collapsed">
   <div class="leaflet-sidebar-tabs">
     <ul role="tablist">
-      <li><a href="#sb-info"  role="tab" title="Feature info">&#9432;</a></li>
-      <li><a href="#sb-draw" role="tab" title="Draw features">&#9998;</a></li>
+      <li><a href="#sb-info" role="tab" title="Feature info">&#9432;</a></li>
     </ul>
     <ul role="tablist"></ul>
   </div>
@@ -928,14 +919,6 @@ class WebMapExporter:
       <h1 class="leaflet-sidebar-header">Feature Info<span class="leaflet-sidebar-close">&#10005;</span></h1>
       <div id="feature-info-content" style="padding:12px;font-size:13px;color:#666">
         Click a map feature to see its attributes here.
-      </div>
-    </div>
-    <div class="leaflet-sidebar-pane" id="sb-draw">
-      <h1 class="leaflet-sidebar-header">Draw Features<span class="leaflet-sidebar-close">&#10005;</span></h1>
-      <div style="padding:12px;font-size:13px;color:#555">
-        <p style="margin:0 0 8px">Use the drawing controls on the left to sketch features on the map.</p>
-        <p id="draw-count" style="margin:0 0 10px;color:#333"></p>
-        <button id="draw-export-btn" style="font-size:12px;padding:5px 12px;border:1px solid #ccc;border-radius:3px;cursor:pointer;background:#fff">Export drawn features (GeoJSON)</button>
       </div>
     </div>
   </div>
@@ -950,11 +933,6 @@ class WebMapExporter:
   </svg>
   <span>AtkinsR&#233;alis</span>
 </div>
-<button id="filter-toggle" title="Toggle feature filter" aria-label="Toggle feature filter toolbar">
-  <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-    <path d="M2 3h14l-5 5.5V15l-4-2V8.5z" fill="#555" stroke="#444" stroke-width="0.5" stroke-linejoin="round"/>
-  </svg>
-</button>
 <div id="filterbar" style="display:none">
   <label>Filter</label>
   <select id="filter-layer" title="Layer"></select>
@@ -976,6 +954,7 @@ class WebMapExporter:
 
   var map = L.map('map', {{
     center: [0, 0], zoom: 2,
+    preferCanvas: true,
     contextmenu: true,
     contextmenuWidth: 180,
     contextmenuItems: [
@@ -1154,45 +1133,17 @@ class WebMapExporter:
 
   function makeMarker(latlng, style, paneName) {{
     var size = style.markerSize || 8;
-    var shape = style.markerShape || 'circle';
     var fill = style.markerColor || '#3388ff';
     var fillOp = style.markerOpacity != null ? style.markerOpacity : 0.9;
     var stroke = style.markerStrokeColor || '#ffffff';
     var strokeW = style.markerStrokeWidth != null ? style.markerStrokeWidth : 1;
-
-    // Circles scale crisply with L.circleMarker
-    if (shape === 'circle') {{
-      var copts = {{
-        radius: size / 2,
-        fillColor: fill,
-        fillOpacity: fillOp,
-        color: stroke,
-        weight: strokeW,
-        opacity: 1
-      }};
-      if (paneName) copts.pane = paneName;
-      return L.circleMarker(latlng, copts);
-    }}
-
-    // All other shapes drawn as an inline-SVG divIcon
-    var pad = strokeW + 2;
-    var box = size + pad * 2;
-    var c = box / 2;
-    var r = size / 2;
-    var inner = shapeSvgInner(shape, c, c, r, fill, fillOp, stroke, strokeW);
-    var angle = style.markerAngle || 0;
-    var rot = angle ? ' transform="rotate(' + angle + ' ' + c + ' ' + c + ')"' : '';
-    var html = '<svg width="' + box + '" height="' + box + '" xmlns="http://www.w3.org/2000/svg">'
-             + '<g' + rot + '>' + inner + '</g></svg>';
-    var icon = L.divIcon({{
-      html: html,
-      className: 'qgis-marker',
-      iconSize: [box, box],
-      iconAnchor: [c, c]
-    }});
-    var mopts = {{ icon: icon }};
-    if (paneName) mopts.pane = paneName;
-    return L.marker(latlng, mopts);
+    var copts = {{
+      radius: size / 2,
+      fillColor: fill, fillOpacity: fillOp,
+      color: stroke, weight: strokeW, opacity: 1
+    }};
+    if (paneName) copts.pane = paneName;
+    return L.circleMarker(latlng, copts);
   }}
 
   function resolveStyle(styleMap, props) {{
@@ -1371,73 +1322,6 @@ class WebMapExporter:
     }}
   }} catch(e) {{ console.warn('Sidebar plugin error:', e); }}
 
-  // ── Geoman draw controls ──────────────────────────────────────────────────
-  try {{
-    if (map.pm) {{
-      map.pm.addControls({{
-        position: 'topleft',
-        drawCircle: false, drawCircleMarker: false,
-        rotateMode: false, cutPolygon: false
-      }});
-      map.on('pm:create', function() {{
-        var el = document.getElementById('draw-count');
-        if (el) {{
-          var n = parseInt(el.dataset.n || '0', 10) + 1;
-          el.dataset.n = n;
-          el.textContent = n + ' feature' + (n === 1 ? '' : 's') + ' drawn';
-        }}
-      }});
-    }}
-    var _drawExportBtn = document.getElementById('draw-export-btn');
-    if (_drawExportBtn) {{
-      _drawExportBtn.addEventListener('click', function() {{
-        var feats = [];
-        if (map.pm) {{
-          map.pm.getGeomanDrawLayers().forEach(function(l) {{
-            if (l.toGeoJSON) feats.push(l.toGeoJSON());
-          }});
-        }}
-        if (!feats.length) {{ alert('No drawn features yet.'); return; }}
-        var data = JSON.stringify({{type: 'FeatureCollection', features: feats}}, null, 2);
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([data], {{type: 'application/json'}}));
-        a.download = 'drawn-features.geojson';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      }});
-    }}
-  }} catch(e) {{ console.warn('Geoman plugin error:', e); }}
-
-  // ── Feature search ────────────────────────────────────────────────────────
-  try {{
-    if (typeof L.Control.Search !== 'undefined') {{
-      var _searchFeats = [];
-      legendItems.forEach(function(it) {{
-        if (it.ld.kind !== 'vector') return;
-        it.ld.geojson.features.forEach(function(f) {{
-          if (!f.geometry || !f.properties) return;
-          var vals = Object.values(f.properties).filter(function(v) {{
-            return v != null && String(v).trim();
-          }});
-          if (!vals.length) return;
-          _searchFeats.push({{
-            type: 'Feature', geometry: f.geometry,
-            properties: {{_label: String(vals[0]), _layer: it.ld.name}}
-          }});
-        }});
-      }});
-      if (_searchFeats.length) {{
-        var _searchLayer = L.geoJSON({{type: 'FeatureCollection', features: _searchFeats}});
-        new L.Control.Search({{
-          layer: _searchLayer,
-          propertyName: '_label',
-          initial: false,
-          zoom: 16,
-          marker: false,
-          textPlaceholder: 'Search features…'
-        }}).addTo(map);
-      }}
-    }}
-  }} catch(e) {{ console.warn('Search plugin error:', e); }}
 
   // ── Legend panel ─────────────────────────────────────────────────────────
   if (INCLUDE_LEGEND && legendItems.length > 0) {{
@@ -1640,7 +1524,6 @@ class WebMapExporter:
     if (vectorItems.length === 0) return;
 
     var bar          = document.getElementById('filterbar');
-    var toggleBtn    = document.getElementById('filter-toggle');
     var layerSel     = document.getElementById('filter-layer');
     var attrSel      = document.getElementById('filter-attr');
     var valuesBtn    = document.getElementById('filter-values-btn');
@@ -1650,15 +1533,24 @@ class WebMapExporter:
     var clearBtn     = document.getElementById('filter-clear');
     var countEl      = document.getElementById('filter-count');
 
-    // Show the toggle button; bar starts hidden until the button is clicked
-    if (toggleBtn) {{
-      toggleBtn.style.display = 'flex';
-      toggleBtn.addEventListener('click', function() {{
-        var isOpen = bar.style.display === 'flex';
-        bar.style.display = isOpen ? 'none' : 'flex';
-        toggleBtn.classList.toggle('active', !isOpen);
-      }});
-    }}
+    // Create the filter toggle as a Leaflet control so it stacks with other controls
+    var FilterToggle = L.Control.extend({{
+      onAdd: function() {{
+        var btn = L.DomUtil.create('button', 'leaflet-bar leaflet-control leaflet-control-filter');
+        btn.title = 'Toggle attribute filter';
+        btn.setAttribute('aria-label', 'Toggle attribute filter');
+        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">'
+          + '<path d="M2 3h14l-5 5.5V15l-4-2V8.5z" fill="#555" stroke="#444" stroke-width="0.5" stroke-linejoin="round"/></svg>';
+        L.DomEvent.disableClickPropagation(btn);
+        L.DomEvent.on(btn, 'click', function() {{
+          var isOpen = bar.style.display === 'flex';
+          bar.style.display = isOpen ? 'none' : 'flex';
+          btn.classList.toggle('active', !isOpen);
+        }});
+        return btn;
+      }}
+    }});
+    new FilterToggle({{ position: 'topleft' }}).addTo(map);
 
     // Populate layer dropdown (value = index into legendItems)
     vectorItems.forEach(function(it) {{
