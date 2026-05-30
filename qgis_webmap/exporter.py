@@ -290,10 +290,17 @@ def _extract_symbol_style(symbol) -> dict:
             style["markerOpacity"] = round(color.alphaF() * sym_opacity, 3)
             style["markerStrokeColor"] = _color_to_hex(stroke_color)
             try:
-                sw_px = _size_to_px(sl.strokeWidth(), sl.strokeWidthUnit())
+                no_stroke = sl.strokeStyle() == Qt.NoPen
             except Exception:
-                sw_px = 1.0
-            style["markerStrokeWidth"] = round(max(0.0, sw_px), 1)
+                no_stroke = False
+            if no_stroke:
+                style["markerStrokeWidth"] = 0
+            else:
+                try:
+                    sw_px = _size_to_px(sl.strokeWidth(), sl.strokeWidthUnit())
+                except Exception:
+                    sw_px = 1.0
+                style["markerStrokeWidth"] = round(max(0.0, sw_px), 1)
             style["markerSize"] = max(4, round(_size_to_px(sl.size(), sl.sizeUnit())))
             style["markerShape"] = _encode_marker_shape(sl)
             try:
