@@ -246,6 +246,12 @@ def _extract_symbol_style(symbol) -> dict:
 
     geom_type = symbol.type()  # 0=marker, 1=line, 2=fill
 
+    # Symbol-level opacity (separate from per-colour alpha in QGIS)
+    try:
+        sym_opacity = float(symbol.opacity())
+    except Exception:
+        sym_opacity = 1.0
+
     # Walk symbol layers to find the primary paint layer
     for i in range(symbol.symbolLayerCount()):
         sl = symbol.symbolLayer(i)
@@ -254,7 +260,7 @@ def _extract_symbol_style(symbol) -> dict:
             fill_color = sl.fillColor()
             stroke_color = sl.strokeColor()
             style["fillColor"] = _color_to_hex(fill_color)
-            style["fillOpacity"] = round(fill_color.alphaF(), 3)
+            style["fillOpacity"] = round(fill_color.alphaF() * sym_opacity, 3)
             try:
                 no_border = sl.strokeStyle() == Qt.NoPen
             except Exception:
@@ -265,14 +271,14 @@ def _extract_symbol_style(symbol) -> dict:
                 style["weight"] = 0
             else:
                 style["color"] = _color_to_hex(stroke_color)
-                style["opacity"] = round(stroke_color.alphaF(), 3)
+                style["opacity"] = round(stroke_color.alphaF() * sym_opacity, 3)
                 style["weight"] = round(max(0.0, _size_to_px(sl.strokeWidth(), sl.strokeWidthUnit())), 1) or 1
             break
 
         elif isinstance(sl, QgsSimpleLineSymbolLayer):
             color = sl.color()
             style["color"] = _color_to_hex(color)
-            style["opacity"] = round(color.alphaF(), 3)
+            style["opacity"] = round(color.alphaF() * sym_opacity, 3)
             style["weight"] = round(max(0.5, _size_to_px(sl.width(), sl.widthUnit())), 1)
             style["fillOpacity"] = 0
             break
@@ -281,7 +287,7 @@ def _extract_symbol_style(symbol) -> dict:
             color = sl.color()
             stroke_color = sl.strokeColor()
             style["markerColor"] = _color_to_hex(color)
-            style["markerOpacity"] = round(color.alphaF(), 3)
+            style["markerOpacity"] = round(color.alphaF() * sym_opacity, 3)
             style["markerStrokeColor"] = _color_to_hex(stroke_color)
             try:
                 sw_px = _size_to_px(sl.strokeWidth(), sl.strokeWidthUnit())
@@ -299,14 +305,13 @@ def _extract_symbol_style(symbol) -> dict:
         elif isinstance(sl, QgsSvgMarkerSymbolLayer):
             color = sl.fillColor()
             style["markerColor"] = _color_to_hex(color)
-            style["markerOpacity"] = round(color.alphaF(), 3)
+            style["markerOpacity"] = round(color.alphaF() * sym_opacity, 3)
             try:
                 style["markerStrokeColor"] = _color_to_hex(sl.strokeColor())
             except Exception:
                 pass
             style["markerSize"] = max(4, round(_size_to_px(sl.size(), sl.sizeUnit())))
-            # SVG markers can't be reproduced exactly; approximate with a square
-            style["markerShape"] = "square"
+            style["markerShape"] = "circle"
             break
 
     # Defaults for fill polygons if nothing matched
@@ -624,6 +629,26 @@ class WebMapExporter:
             _plugin_block("measure"),
         ]))
 
+        # Brand watermark — use logo.png from vendor/ if present, else SVG fallback
+        import base64 as _b64
+        _logo_path = os.path.join(_PLUGIN_DIR, "vendor", "logo.png")
+        if os.path.exists(_logo_path):
+            with open(_logo_path, "rb") as _f:
+                _logo_b64 = _b64.b64encode(_f.read()).decode("utf-8")
+            brand_content = (
+                f'<img src="data:image/png;base64,{_logo_b64}"'
+                f' alt="AtkinsRéalis" style="height:22px;display:block;">'
+            )
+        else:
+            brand_content = (
+                '<svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg">'
+                '<rect width="22" height="22" rx="3" fill="#003057"/>'
+                '<path d="M4 16 L11 5 L18 16 H14 L11 11 L8 16 Z" fill="#00a9a0"/>'
+                '<rect x="7" y="13" width="8" height="1.5" fill="#003057"/>'
+                '</svg>'
+                '<span>AtkinsRéalis</span>'
+            )
+
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -925,13 +950,7 @@ class WebMapExporter:
 </div>
 <div id="map"></div>
 <div id="brand-watermark">
-  <!-- AtkinsRealis wordmark (replace svg with official asset if available) -->
-  <svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg">
-    <rect width="22" height="22" rx="3" fill="#003057"/>
-    <path d="M4 16 L11 5 L18 16 H14 L11 11 L8 16 Z" fill="#00a9a0"/>
-    <rect x="7" y="13" width="8" height="1.5" fill="#003057"/>
-  </svg>
-  <span>AtkinsR&#233;alis</span>
+  {brand_content}
 </div>
 <div id="filterbar" style="display:none">
   <label>Filter</label>
