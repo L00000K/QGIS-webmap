@@ -25,7 +25,9 @@ A QGIS 3 plugin that exports selected layers to a **standalone HTML web map** po
 
 ## Requirements
 
-- QGIS 3.0 or later
+- **QGIS 4.0 or later** — what the plugin targets and is tested against.
+- QGIS 3.28+ still works. The plugin opens and exports normally, but warns
+  once per session that it may not support deprecated versions of QGIS.
 
 ## Installation
 
