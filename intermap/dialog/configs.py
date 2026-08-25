@@ -71,7 +71,6 @@ class ConfigsMixin:
         ("Title block", "cap_title_cb"),
         ("Map views",   "cap_views_cb"),
         ("Report",      "cap_report_cb"),
-        ("3D",          "feat_3d_cb"),
     )
 
     def _update_config_caps_label(self):
@@ -286,7 +285,6 @@ class ConfigsMixin:
                 "title":  self.cap_title_cb.isChecked(),
                 "views":  self.cap_views_cb.isChecked(),
                 "report": self.cap_report_cb.isChecked(),
-                "3d":     self.feat_3d_cb.isChecked(),
             },
             "theme":                 self.export_theme_combo.currentData(),
             "features": {
@@ -303,13 +301,7 @@ class ConfigsMixin:
                 "fancy_labels": self.feat_fancy_labels_cb.isChecked(),
                 "changelog":    self.feat_changelog_cb.isChecked(),
                 "sketch":       self.feat_sketch_cb.isChecked(),
-                "feat_3d":      self.feat_3d_cb.isChecked(),
-                "cesium_ion_token": self.cesium_ion_token_edit.text().strip(),
-                "google_maps_key":  self.google_maps_key_edit.text().strip(),
                 "cog_proxy":        self.cog_proxy_edit.text().strip(),
-                "extrude_field":       self.extrude_field_edit.text().strip(),
-                "extrude_scale":       self.extrude_scale_spin.value(),
-                "elevation_raster_id": self.elevation_raster_combo.currentData() or "",
                 "report_md_path":      self.report_md_edit.text().strip(),
                 "report_figures_dir":  self.report_figures_edit.text().strip(),
                 "report_pdf_path":     self.report_pdf_edit.text().strip(),
@@ -391,30 +383,12 @@ class ConfigsMixin:
             ("fancy_labels", "feat_fancy_labels_cb"),
             ("changelog",    "feat_changelog_cb"),
             ("sketch",       "feat_sketch_cb"),
-            ("feat_3d",      "feat_3d_cb"),
         ]
         for key, attr in _feat_map:
             if key in feats:
                 getattr(self, attr).setChecked(bool(feats[key]))
-        if "cesium_ion_token" in feats:
-            self.cesium_ion_token_edit.setText(feats["cesium_ion_token"])
-        if "google_maps_key" in feats:
-            self.google_maps_key_edit.setText(feats["google_maps_key"])
         if "cog_proxy" in feats:
             self.cog_proxy_edit.setText(feats["cog_proxy"])
-        if "extrude_field" in feats:
-            self.extrude_field_edit.setText(feats["extrude_field"])
-        if "extrude_scale" in feats:
-            try:
-                self.extrude_scale_spin.setValue(float(feats["extrude_scale"]))
-            except Exception:
-                pass
-        if "elevation_raster_id" in feats:
-            er_id = feats["elevation_raster_id"]
-            if er_id:
-                idx = self.elevation_raster_combo.findData(er_id)
-                if idx >= 0:
-                    self.elevation_raster_combo.setCurrentIndex(idx)
         if "report_md_path" in feats:
             self.report_md_edit.setText(feats["report_md_path"])
         if "report_figures_dir" in feats:
@@ -432,12 +406,10 @@ class ConfigsMixin:
                 "title":  bool(info.get("enabled", True)),
                 "views":  bool(state.get("map_views")),
                 "report": bool(feats.get("report_md_path") or feats.get("report_pdf_path")),
-                "3d":     bool(feats.get("feat_3d")),
             }
         self.cap_title_cb.setChecked(bool(caps.get("title", True)))
         self.cap_views_cb.setChecked(bool(caps.get("views", False)))
         self.cap_report_cb.setChecked(bool(caps.get("report", False)))
-        self.feat_3d_cb.setChecked(bool(caps.get("3d", False)))
         self._update_capability_tabs()
 
     def _instance_save(self):

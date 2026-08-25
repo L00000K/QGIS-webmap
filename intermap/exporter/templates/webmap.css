@@ -1408,37 +1408,5 @@
   .leaflet-pm-toolbar { display: none; }
   .sketch-active .leaflet-pm-toolbar { display: flex !important; }
 
-  /* ── Cesium 3D viewer ─────────────────────────────────────────────── */
-  #cesium-container {
-    display: none;
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 200;
-  }
-  .view-toggle-ctrl a {
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.04em;
-    color: #333 !important;
-    line-height: 26px !important;
-  }
-  .view-toggle-ctrl.is-3d a {
-    background: #3f32f1 !important;
-    color: #fff !important;
-  }
-  #cesium-loading {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    color: #fff;
-    font-size: 14px;
-    background: rgba(0,0,0,0.55);
-    padding: 10px 20px;
-    border-radius: 8px;
-    pointer-events: none;
-    display: none;
-    z-index: 600;
-  }
 
 

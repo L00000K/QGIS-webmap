@@ -3906,7 +3906,6 @@
     { sel: '#data-export-btn',                   name: 'Data Export',       text: 'Download layers as GeoJSON or CSV, either individually or all at once.' },
     { sel: '.leaflet-control-fullscreen-button', name: 'Full Screen',       text: 'Toggle full-screen mode.' },
     { sel: '.leaflet-control-minimap',           name: 'Minimap',           text: 'Overview minimap showing your current extent. Click to toggle.' },
-    { sel: '.view-toggle-ctrl',                  name: '2D / 3D',           text: 'Switch between the flat map and the 3D globe view.' },
     { sel: '.leaflet-pm-toolbar',                name: 'Sketch Tools',      text: 'Draw and annotate on the map: lines, shapes, markers and text. Sketches are not saved with the file.' },
     // ── Left panel sections
     { sel: '#map-views-section',                 name: 'Map Views',         text: 'Saved views of the map. Click one to jump to its extent and switch to its layer set. The active view is highlighted.', side:'right' },
@@ -4117,7 +4116,7 @@
     new SketchToggle().addTo(map);
   }
 
-  // ── Expose for cross-block hooks (Cesium, extensions) ───────────────────
+  // ── Expose for cross-block hooks (report mode, extensions) ──────────────
   window.setLayerVisible  = setLayerVisible;
   window.setLayerOpacity  = setLayerOpacity;
   window._im_applyTheme   = applyTheme;

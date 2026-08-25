@@ -4,7 +4,7 @@ import datetime
 from qgis.PyQt.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog, QLineEdit,
     QMessageBox, QCheckBox, QGroupBox, QFormLayout, QWidget, QLabel,
-    QComboBox, QDoubleSpinBox, QTreeWidget,
+    QComboBox, QTreeWidget,
 )
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.PyQt.QtCore import Qt, QUrl
@@ -25,9 +25,7 @@ class ExportTabMixin:
         self.cap_title_cb = QCheckBox("Title block  ·  client, project no., document control && revisions")
         self.cap_views_cb = QCheckBox("Map views  ·  named preset extents && layer sets")
         self.cap_report_cb = QCheckBox("Report  ·  scrolling story panel (Markdown or PDF)")
-        self.feat_3d_cb = QCheckBox("3D view  ·  Cesium globe, extrusion && terrain")
-        self.feat_3d_cb.setChecked(False)
-        for _cb in (self.cap_title_cb, self.cap_views_cb, self.cap_report_cb, self.feat_3d_cb):
+        for _cb in (self.cap_title_cb, self.cap_views_cb, self.cap_report_cb):
             _cb.toggled.connect(self._update_capability_tabs)
             _cb.toggled.connect(self._mark_unsaved)
             cap_vl.addWidget(_cb)
@@ -209,61 +207,6 @@ class ExportTabMixin:
         layout.addStretch()
         return widget
 
-    def _build_3d_tab(self):
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        # ── 3D settings ───────────────────────────────────────────────────
-        self.d3_group = QGroupBox("3D view settings")
-        d3_group = self.d3_group
-        d3_form  = QFormLayout(d3_group)
-        d3_form.setContentsMargins(8, 6, 8, 8)
-        d3_form.setSpacing(6)
-
-        self.cesium_ion_token_edit = QLineEdit()
-        self.cesium_ion_token_edit.setPlaceholderText("Paste Cesium Ion token for terrain + OSM Buildings")
-        self.cesium_ion_token_edit.setToolTip(
-            "Optional free Cesium Ion access token (cesium.com). "
-            "Enables real-world terrain and global 3D building footprints."
-        )
-        d3_form.addRow("Cesium Ion token:", self.cesium_ion_token_edit)
-
-        self.google_maps_key_edit = QLineEdit()
-        self.google_maps_key_edit.setPlaceholderText("Paste Google Maps API key for Photorealistic 3D Tiles")
-        self.google_maps_key_edit.setToolTip(
-            "Optional Google Maps Platform API key. "
-            "Enables Google Photorealistic 3D Tiles (photorealistic buildings + imagery)."
-        )
-        d3_form.addRow("Google Maps key:", self.google_maps_key_edit)
-
-        extrude_row = QHBoxLayout()
-        self.extrude_field_edit = QLineEdit()
-        self.extrude_field_edit.setPlaceholderText("e.g. height_m or floor_count")
-        self.extrude_field_edit.setToolTip(
-            "Optional attribute field name used to extrude polygon layers into 3D. "
-            "Leave blank for flat polygons."
-        )
-        self.extrude_scale_spin = QDoubleSpinBox()
-        self.extrude_scale_spin.setRange(0.01, 10000.0)
-        self.extrude_scale_spin.setValue(1.0)
-        self.extrude_scale_spin.setDecimals(2)
-        self.extrude_scale_spin.setSuffix(" m/unit")
-        self.extrude_scale_spin.setToolTip("Multiply field value by this to get height in metres")
-        extrude_row.addWidget(self.extrude_field_edit)
-        extrude_row.addWidget(self.extrude_scale_spin)
-        d3_form.addRow("Extrude field:", extrude_row)
-
-        self.elevation_raster_combo = QComboBox()
-        self.elevation_raster_combo.addItem("(none)", None)
-        self.elevation_raster_combo.setToolTip(
-            "Optional raster layer to use as elevation surface for 3D view.\n"
-            "Will be converted to a heightmap; features without Z will be draped on this surface."
-        )
-        d3_form.addRow("Elevation raster:", self.elevation_raster_combo)
-
-        layout.addWidget(d3_group)
-        layout.addStretch()
-        return widget
-
     def _build_report_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -280,7 +223,7 @@ class ExportTabMixin:
             "Markdown report rendered as a scrolling story panel beside the map.\n\n"
             "Front-matter supports title: and autolink: (layer/field/pattern).\n"
             "Directives:\n"
-            "  :::view <Map View name> [3d pitch=-35 heading=120]\n"
+            "  :::view <Map View name>\n"
             "  ![caption](figures/plan.png){#fig:plan}\n"
             "  {#tbl:results caption=\"...\"} above a markdown table\n"
             "  :::table layer=\"Boreholes\" filter=\"depth > 10\" {#tbl:bh caption=\"...\"}\n"
@@ -328,8 +271,7 @@ class ExportTabMixin:
         self.pdf_bindings_tree.setRootIsDecorated(False)
         self.pdf_bindings_tree.setMaximumHeight(110)
         self.pdf_bindings_tree.setToolTip(
-            "As the PDF is scrolled, reaching a listed page applies its map view.\n"
-            "Options (optional) use the :::view grammar, e.g.:  3d pitch=-35 heading=120")
+            "As the PDF is scrolled, reaching a listed page applies its map view.")
         pdf_bind_btns = QHBoxLayout()
         pdf_bind_add = QPushButton("+ Add binding")
         pdf_bind_add.clicked.connect(self._pdf_binding_add)
@@ -420,7 +362,7 @@ class ExportTabMixin:
             combo.setCurrentText(view)
         combo.currentTextChanged.connect(self._mark_unsaved)
         opts_edit = QLineEdit(opts or "")
-        opts_edit.setPlaceholderText("e.g. 3d pitch=-35")
+        opts_edit.setPlaceholderText("(none)")
         opts_edit.textChanged.connect(self._mark_unsaved)
         self.pdf_bindings_tree.setItemWidget(item, 0, spin)
         self.pdf_bindings_tree.setItemWidget(item, 1, combo)
@@ -620,13 +562,7 @@ class ExportTabMixin:
                 feat_fancy_labels=self.feat_fancy_labels_cb.isChecked(),
                 feat_changelog=self.feat_changelog_cb.isChecked(),
                 changelog=list(self._changelog),
-                feat_3d=self.feat_3d_cb.isChecked(),
                 feat_sketch=self.feat_sketch_cb.isChecked(),
-                cesium_ion_token=self.cesium_ion_token_edit.text().strip(),
-                google_maps_key=self.google_maps_key_edit.text().strip(),
-                feat_3d_extrude_field=self.extrude_field_edit.text().strip(),
-                feat_3d_extrude_scale=self.extrude_scale_spin.value(),
-                feat_3d_elevation_raster=self.elevation_raster_combo.currentData(),
                 report_md_path=(self.report_md_edit.text().strip() if self.cap_report_cb.isChecked() else ""),
                 report_figures_dir=self.report_figures_edit.text().strip(),
                 report_pdf_path=(self.report_pdf_edit.text().strip() if self.cap_report_cb.isChecked() else ""),

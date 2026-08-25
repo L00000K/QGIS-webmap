@@ -144,14 +144,12 @@ def _pdf_page_count(data: bytes) -> int:
 
 
 def _parse_view_opts(s: str) -> dict:
-    """Parse a binding options string like "3d pitch=-35 heading=120" into the
-    opts dict the web app's applyView() accepts — the same grammar as the
-    markdown ":::view Name [ ... ]" directive."""
+    """Parse a binding options string like "zoom=14" into the opts dict the web
+    app's applyView() accepts — the same grammar as the markdown
+    ":::view Name [ ... ]" directive. Tokens it does not recognise are ignored,
+    so a report written against an older build still binds its views."""
     opts = {}
     for tok in (s or "").split():
-        if tok == "3d":
-            opts["mode3d"] = True
-            continue
         if "=" in tok:
             key, _, val = tok.partition("=")
             try:

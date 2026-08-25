@@ -237,14 +237,12 @@ def build_scenarios(tmpdir):
             feat_attr_geojson=False, feat_data_export=False,
             feat_measure=False, feat_print=False, feat_filter=False,
             feat_search=False, feat_minimap=False, feat_fancy_labels=False,
-            feat_changelog=False, feat_3d=False, feat_sketch=False,
+            feat_changelog=False, feat_sketch=False,
         ),
         "full": WebMapExporter(
             [], "unused.html",
             map_views=MAP_VIEWS, info_panel=INFO_PANEL, theme="corporate",
             changelog=CHANGELOG, feat_tree_lines=True,
-            cesium_ion_token="TOKEN123", google_maps_key="GKEY456",
-            feat_3d_extrude_field="depth", feat_3d_extrude_scale=2.5,
             cog_proxy="https://proxy.example.com/cors?url=",
             **common,
         ),
@@ -269,7 +267,7 @@ def build_scenarios(tmpdir):
         report_pdf_path=pdf_path,
         report_pdf_bindings=[
             {"page": 1, "view": "Overview"},
-            {"page": 3, "view": "North detail", "opts": "3d pitch=-35 heading=120"},
+            {"page": 3, "view": "North detail", "opts": "zoom=15"},
         ],
         **common,
     )

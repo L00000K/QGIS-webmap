@@ -13,7 +13,7 @@ _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 # Concatenated in this order (with the glue markup below) the parts form the
 # complete page. They are kept separate so the CSS and each JS block can be
 # read and edited as ordinary files.
-_PARTS = ("head.html", "webmap.css", "body.html", "app.js", "cesium.js", "report.js")
+_PARTS = ("head.html", "webmap.css", "body.html", "app.js", "report.js")
 
 _PLACEHOLDER_RE = re.compile(r"@@([A-Za-z_][A-Za-z0-9_]*)@@")
 
@@ -32,13 +32,12 @@ def _read(name: str) -> str:
 def _page_template() -> str:
     global _template_cache
     if _template_cache is None:
-        head, css, body, app_js, cesium_js, report_js = (_read(p) for p in _PARTS)
+        head, css, body, app_js, report_js = (_read(p) for p in _PARTS)
         _template_cache = (
             head
             + "\n<style>\n" + css
             + "\n</style>\n</head>\n<body>\n" + body
             + "\n<script>\n" + app_js
-            + "\n" + cesium_js
             + "\n" + report_js
             + "\n</script>\n</body>\n</html>"
         )

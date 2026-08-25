@@ -1,11 +1,7 @@
-"""
-Raster layer handling: legend extraction, PNG snapshot embedding, and the
-quantised elevation grid used by the 3D terrain provider.
-"""
+"""Raster layer handling: legend extraction and PNG snapshot embedding."""
 import os
 import base64
 import tempfile
-from typing import Optional
 
 from qgis.core import (
     QgsCoordinateTransform, QgsMapSettings, QgsProject,
@@ -127,109 +123,6 @@ def _raster_to_base64(layer) -> tuple:
         [wgs_extent.yMaximum(), wgs_extent.xMaximum()],
     ]
     return b64, bounds
-
-
-def _dem_grid_size(extent_w: float, extent_h: float, max_dim: int = 512) -> tuple:
-    """Grid dimensions for a DEM sample of a max_dim budget, preserving the
-    extent's aspect ratio. Both dimensions are at least 2 so the grid always
-    has interpolatable corners."""
-    if extent_w <= 0 or extent_h <= 0:
-        return (2, 2)
-    aspect = extent_w / extent_h
-    if aspect >= 1.0:
-        gw = max_dim
-        gh = int(round(max_dim / aspect))
-    else:
-        gh = max_dim
-        gw = int(round(max_dim * aspect))
-    return (max(2, gw), max(2, gh))
-
-
-def _dem_quantize(rows) -> tuple:
-    """Quantize a row-major grid of heights (floats, None = nodata) to
-    little-endian uint16 relative to the grid's min/max. Nodata encodes as 0
-    (= the minimum height). Returns (vmin, vmax, bytes)."""
-    vals = [v for row in rows for v in row if v is not None]
-    if not vals:
-        n = sum(len(row) for row in rows)
-        return (0.0, 0.0, b"\x00\x00" * n)
-    vmin = float(min(vals))
-    vmax = float(max(vals))
-    rng = (vmax - vmin) or 1.0
-    out = bytearray()
-    for row in rows:
-        for v in row:
-            if v is None:
-                q = 0
-            else:
-                q = int(round((v - vmin) / rng * 65535))
-                q = 0 if q < 0 else (65535 if q > 65535 else q)
-            out += q.to_bytes(2, "little")
-    return (vmin, vmax, bytes(out))
-
-
-def _build_elevation_dem(layer, max_dim: int = 512) -> Optional[dict]:
-    """Sample a QGIS raster layer (band 1) into a WGS-84 height grid for the
-    Cesium terrain provider. Row 0 is the northern edge, matching Cesium's
-    heightmap convention. Returns a JSON-able dict, or None if the raster
-    cannot be sampled — the export then simply carries no terrain."""
-    try:
-        from qgis.core import QgsPointXY
-
-        provider = layer.dataProvider()
-        ext = layer.extent()
-        if ext.width() <= 0 or ext.height() <= 0:
-            return None
-        tr_fwd = QgsCoordinateTransform(layer.crs(), _WGS84, QgsProject.instance())
-        wgs = tr_fwd.transformBoundingBox(ext)
-        if wgs.width() <= 0 or wgs.height() <= 0:
-            return None
-        gw, gh = _dem_grid_size(wgs.width(), wgs.height(), max_dim)
-
-        # One resampled read of the source band in the layer's own CRS, then
-        # index into it per grid point — far faster than per-point sample().
-        bw = min(int(provider.xSize() or 0) or 1024, 1024)
-        bh = min(int(provider.ySize() or 0) or 1024, 1024)
-        block = provider.block(1, ext, bw, bh)
-
-        same_crs = layer.crs().authid() == _WGS84.authid()
-        tr_back = None if same_crs else QgsCoordinateTransform(
-            _WGS84, layer.crs(), QgsProject.instance())
-
-        rows = []
-        for j in range(gh):
-            lat = wgs.yMaximum() - (wgs.yMaximum() - wgs.yMinimum()) * (j / (gh - 1))
-            row = []
-            for i in range(gw):
-                lon = wgs.xMinimum() + (wgs.xMaximum() - wgs.xMinimum()) * (i / (gw - 1))
-                if same_crs:
-                    px, py = lon, lat
-                else:
-                    try:
-                        p = tr_back.transform(QgsPointXY(lon, lat))
-                        px, py = p.x(), p.y()
-                    except Exception:
-                        row.append(None)
-                        continue
-                col = int((px - ext.xMinimum()) / ext.width() * bw)
-                rw  = int((ext.yMaximum() - py) / ext.height() * bh)
-                if col < 0 or rw < 0 or col >= bw or rw >= bh or block.isNoData(rw, col):
-                    row.append(None)
-                else:
-                    row.append(float(block.value(rw, col)))
-            rows.append(row)
-
-        vmin, vmax, raw = _dem_quantize(rows)
-        return {
-            "b64":   base64.b64encode(raw).decode("ascii"),
-            "w":     gw, "h": gh,
-            "min":   vmin, "max": vmax,
-            "west":  wgs.xMinimum(), "south": wgs.yMinimum(),
-            "east":  wgs.xMaximum(), "north": wgs.yMaximum(),
-        }
-    except Exception as e:
-        print(f"InterMap: elevation raster skipped ({e})")
-        return None
 
 
 # ── Report / story-mode helpers ──────────────────────────────────────────────

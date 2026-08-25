@@ -329,25 +329,8 @@ class LayersTabMixin:
         self.layer_tree_widget.expandAll()
         self.layer_tree_widget.blockSignals(False)
         self._populate_qgis_theme_combos()
-        self._populate_elevation_raster_combo()
         self._mv_populate_layer_combo()
         self._update_required_layers()
-
-    def _populate_elevation_raster_combo(self):
-        """Populate elevation raster combo with available raster layers."""
-        self.elevation_raster_combo.blockSignals(True)
-        current_data = self.elevation_raster_combo.currentData()
-        self.elevation_raster_combo.clear()
-        self.elevation_raster_combo.addItem("(none)", None)
-        for layer in QgsProject.instance().mapLayers().values():
-            if layer.type() == LAYER_TYPE_RASTER:
-                self.elevation_raster_combo.addItem(layer.name(), layer.id())
-        # Restore previous selection if it still exists
-        if current_data:
-            idx = self.elevation_raster_combo.findData(current_data)
-            if idx >= 0:
-                self.elevation_raster_combo.setCurrentIndex(idx)
-        self.elevation_raster_combo.blockSignals(False)
 
     def _populate_qgis_theme_combos(self):
         theme_names = []

@@ -38,7 +38,6 @@ intermap/
 │       ├── webmap.css       all page styles
 │       ├── body.html        page markup
 │       ├── app.js           2D map application (main IIFE)
-│       ├── cesium.js        3D viewer IIFE
 │       └── report.js        report / story-mode IIFE
 ├── metadata.txt             QGIS plugin manifest
 └── vendor/                  bundled Leaflet 1.9.4 + plugins, marked, PDF.js, logo
@@ -116,7 +115,7 @@ WebMapExporter.export()
 
 The exported page lives in `exporter/templates/` as ordinary HTML/CSS/JS
 files containing `@@name@@` placeholders. `render_page(ctx)` concatenates the
-parts (head → style → body → app.js → cesium.js → report.js) and substitutes
+parts (head → style → body → app.js → report.js) and substitutes
 every placeholder in a single regex pass, so placeholder-like text inside
 substituted values (e.g. user data in the GeoJSON payload) is never
 re-processed. A missing context key raises immediately rather than emitting a
@@ -336,3 +335,17 @@ Three layers, none requiring a QGIS installation:
    offline tile servers is filtered out).
 
 Run with: `python3 -m unittest discover tests -v`
+
+## 3D view
+
+The Cesium globe, terrain, extrusion and the 2D/3D toggle live on the
+`feature/3d` branch, not on `main`. They were split out so the release line
+carries only the 2D map; the branch holds the last working state
+(`cesium.js`, the 3D tab, the elevation-raster DEM helpers and the report
+mode's `[3d pitch=… heading=…]` camera grammar) and is where that work
+continues.
+
+Merging it back means re-adding `cesium.js` to `_PARTS` in
+`exporter/template.py`, the exporter's `feat_3d*` arguments and their
+template placeholders, and the `_build_3d_tab` page with its capability
+switch.

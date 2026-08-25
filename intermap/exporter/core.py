@@ -14,7 +14,7 @@ from ..compat import LAYER_TYPE_RASTER, LAYER_TYPE_VECTOR
 from .compat import _WGS84
 from .geometry import _flatten_coords, _geom_type_str, _layer_to_geojson
 from .labels import _extract_label_config
-from .rasters import _build_elevation_dem, _raster_legend_data, _raster_to_base64
+from .rasters import _raster_legend_data, _raster_to_base64
 from .report import _build_pdf_report_payload, _build_report_payload
 from .sources import _parse_cog_source, _parse_wms_source, _wms_legend_url
 from .styles import _build_style_map
@@ -38,10 +38,7 @@ class WebMapExporter:
                  feat_search=True, feat_minimap=True, feat_fancy_labels=True,
                  feat_changelog=True, changelog=None,
                  feat_tree_lines=False,
-                 feat_3d=True, feat_sketch=True,
-                 cesium_ion_token='', google_maps_key='',
-                 feat_3d_extrude_field='', feat_3d_extrude_scale=1.0,
-                 feat_3d_elevation_raster=None,
+                 feat_sketch=True,
                  report_md_path='', report_figures_dir='',
                  report_pdf_path='', report_pdf_bindings=None,
                  cog_proxy=''):
@@ -71,13 +68,7 @@ class WebMapExporter:
         self.feat_changelog = feat_changelog
         self.feat_tree_lines = feat_tree_lines
         self.changelog = changelog or []
-        self.feat_3d = feat_3d
         self.feat_sketch = feat_sketch
-        self.cesium_ion_token = cesium_ion_token or ''
-        self.google_maps_key = google_maps_key or ''
-        self.feat_3d_extrude_field = feat_3d_extrude_field or ''
-        self.feat_3d_extrude_scale = float(feat_3d_extrude_scale or 1.0)
-        self.feat_3d_elevation_raster = feat_3d_elevation_raster or None
         self.report_md_path = (report_md_path or '').strip()
         self.report_figures_dir = (report_figures_dir or '').strip()
         self.report_pdf_path = (report_pdf_path or '').strip()
@@ -197,22 +188,6 @@ class WebMapExporter:
         include_basemap_json = "true" if self.include_basemap else "false"
         basemap_greyscale_json = "true" if self.basemap_greyscale else "false"
         tree_json = json.dumps(self.layer_tree, separators=(",", ":")).replace("</", "<\\/")
-        _cesium_ion_token    = str(self.cesium_ion_token or '').replace('"', '').replace('\\', '')
-        _google_maps_key     = str(self.google_maps_key  or '').replace('"', '').replace('\\', '')
-        _extrude_field       = str(self.feat_3d_extrude_field or '').replace('"', '').replace('\\', '')
-        _extrude_scale       = self.feat_3d_extrude_scale
-
-        # Elevation raster → embedded WGS-84 heightmap for the 3D terrain
-        _elevation_json = "null"
-        if self.feat_3d and self.feat_3d_elevation_raster:
-            try:
-                _elev_layer = QgsProject.instance().mapLayer(self.feat_3d_elevation_raster)
-            except Exception:
-                _elev_layer = None
-            if _elev_layer is not None:
-                dem = _build_elevation_dem(_elev_layer)
-                if dem:
-                    _elevation_json = json.dumps(dem, separators=(",", ":"))
         # Properly escaped JS string literal (safe against injection)
         _cog_proxy_json      = json.dumps(str(self.cog_proxy or ''))
 
@@ -613,7 +588,6 @@ class WebMapExporter:
             "fancyLabels": self.feat_fancy_labels,
             "changelog":   self.feat_changelog,
             "treeLines":   self.feat_tree_lines,
-            "cesium3d":    self.feat_3d,
             "sketch":      self.feat_sketch,
         })
 
@@ -707,11 +681,6 @@ class WebMapExporter:
             "_filterbar_html": _filterbar_html,
             "_searchbar_html": _searchbar_html,
             "_attr_table_panel_html": _attr_table_panel_html,
-            "_cesium_ion_token": _cesium_ion_token,
-            "_google_maps_key": _google_maps_key,
-            "_extrude_field": _extrude_field,
-            "_extrude_scale": _extrude_scale,
-            "_elevation_json": _elevation_json,
             "_cog_proxy_json": _cog_proxy_json,
             "_th_hdr": _th_hdr,
             "_th_hdr_bdr": _th_hdr_bdr,

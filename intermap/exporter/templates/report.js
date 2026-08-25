@@ -60,14 +60,13 @@
       if (/^```/.test(line)) { inFence = !inFence; out.push(line); continue; }
       if (inFence) { out.push(line); continue; }
 
-      // :::view View Name [3d pitch=-35 heading=120]
+      // :::view View Name [key=value …]
       if ((m = /^:::view[ \t]+(.+)$/.exec(line))) {
         var rest = m[1], opts = {};
         var om = /\[([^\]]*)\]\s*$/.exec(rest);
         if (om) {
           rest = rest.slice(0, om.index);
           om[1].split(/\s+/).forEach(function(tok) {
-            if (tok === '3d') { opts.mode3d = true; return; }
             var kv = tok.split('=');
             if (kv.length === 2 && isFinite(parseFloat(kv[1]))) opts[kv[0]] = parseFloat(kv[1]);
           });
@@ -335,41 +334,12 @@
     media.classList.remove('visible');
   }
 
-  // ── View activation (2D map or 3D camera) ─────────────────────────────────
-  function _in3d() {
-    var c = document.getElementById('cesium-container');
-    return !!(window._im_cesiumViewer && c && c.style.display === 'block');
-  }
-
-  function applyView(name, opts) {
+  // ── View activation ───────────────────────────────────────────────────────
+  function applyView(name) {
     var idx = -1;
     THEMES.forEach(function(t, i) { if (idx === -1 && (t.name || '') === name) idx = i; });
     if (idx === -1) return console.warn('Report: unknown view', name);
     if (window._im_applyTheme) window._im_applyTheme(idx);
-    var ext = THEMES[idx].extent;
-    if (_in3d() && ext && window.Cesium) {
-      var cv = window._im_cesiumViewer;
-      if (opts && (opts.pitch !== undefined || opts.heading !== undefined || opts.height !== undefined)) {
-        var cLon = (ext[0][1] + ext[1][1]) / 2, cLat = (ext[0][0] + ext[1][0]) / 2;
-        var spanM = Math.max(
-          Math.abs(ext[1][1] - ext[0][1]) * 111320 * Math.cos(cLat * Math.PI / 180),
-          Math.abs(ext[1][0] - ext[0][0]) * 110540);
-        cv.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(cLon, cLat, opts.height || spanM * 1.3),
-          orientation: {
-            heading: Cesium.Math.toRadians(opts.heading || 0),
-            pitch:   Cesium.Math.toRadians(opts.pitch !== undefined ? opts.pitch : -90),
-            roll: 0
-          },
-          duration: 1.0
-        });
-      } else {
-        cv.camera.flyTo({
-          destination: Cesium.Rectangle.fromDegrees(ext[0][1], ext[0][0], ext[1][1], ext[1][0]),
-          duration: 1.0
-        });
-      }
-    }
   }
 
   // ── GIS feature links ─────────────────────────────────────────────────────
@@ -393,13 +363,6 @@
         map.flyTo(b.getCenter(), Math.max(map.getZoom(), 16));
       } else {
         map.flyToBounds(b.pad(0.6));
-      }
-      if (_in3d() && window.Cesium) {
-        window._im_cesiumViewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(
-            b.getCenter().lng, b.getCenter().lat, 1200),
-          duration: 1.0
-        });
       }
     }
     if (window._im_highlightFeature) window._im_highlightFeature(feat);

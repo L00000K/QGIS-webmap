@@ -65,7 +65,7 @@ class DialogPackageTests(unittest.TestCase):
                      "_save_settings", "_collect_state", "_apply_state",
                      "_capture_canvas_extent", "_switch_tab",
                      "_build_project_tab", "_build_export_settings_tab",
-                     "_build_3d_tab", "_build_report_tab",
+                     "_build_report_tab",
                      "_update_capability_tabs", "_update_config_caps_label",
                      "_mv_show_layers_in_canvas", "_mv_copy_extent_from_view",
                      "_mv_copy_layers_from_view", "_mv_pick_other_view",
@@ -94,9 +94,9 @@ class DialogPackageTests(unittest.TestCase):
             def __getattr__(self, n): return lambda *a, **k: None
 
         dlg = self.dlg(_Iface())
-        self.assertEqual(len(dlg._nav_btns), 7)
+        self.assertEqual(len(dlg._nav_btns), 6)
         # Export settings is last so the capability indices stay stable.
-        self.assertEqual([idx for _cb, idx in dlg._cap_tab_map], [2, 3, 4, 5])
+        self.assertEqual([idx for _cb, idx in dlg._cap_tab_map], [2, 3, 4])
         # Lite/Pro mode machinery is gone — check the real classes' own dicts
         # (hasattr is unreliable through the permissive placeholder base).
         own = set()

@@ -113,7 +113,6 @@ intermap/
 │       ├── head.html / body.html
 │       ├── webmap.css
 │       ├── app.js           2D map application
-│       ├── cesium.js        3D viewer
 │       └── report.js        report / story mode
 ├── icon.svg                 Toolbar icon
 └── vendor/                  Embedded JS/CSS libraries

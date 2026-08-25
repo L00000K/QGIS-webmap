@@ -125,12 +125,12 @@ def scan_all_tabs():
 
     dlg = WebMapExportDialog(_Iface())
     dlg.show()
-    for cb in (dlg.cap_title_cb, dlg.cap_views_cb, dlg.cap_report_cb, dlg.feat_3d_cb):
+    for cb in (dlg.cap_title_cb, dlg.cap_views_cb, dlg.cap_report_cb):
         cb.setChecked(True)
     app.processEvents()
 
     tabs = ["Project", "Layers", "Title block", "Map Views",
-            "Report", "3D", "Export settings"]
+            "Report", "Export settings"]
     findings = []
     for height in (700, 1100, 1600):
         for collapsed in (False, True):

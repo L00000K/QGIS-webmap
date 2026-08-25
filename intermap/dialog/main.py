@@ -134,33 +134,20 @@ class WebMapExportDialog(RichTextMixin, ConfigsMixin, MapInfoTabMixin,
             ("feat_minimap",          "feat_minimap_cb"),
             ("feat_fancy_labels",     "feat_fancy_labels_cb"),
             ("feat_changelog",        "feat_changelog_cb"),
-            ("feat_3d",               "feat_3d_cb"),
             ("feat_sketch",           "feat_sketch_cb"),
         ):
             key = f"{_SETTINGS_KEY}/{flag}"
             if s.contains(key):
                 getattr(self, attr).setChecked(s.value(key, True, type=bool))
 
-        for _3d_key, _3d_attr in (
-            ("cesium_ion_token",   "cesium_ion_token_edit"),
-            ("google_maps_key",    "google_maps_key_edit"),
-            ("extrude_field",      "extrude_field_edit"),
+        for _key, _attr in (
             ("cog_proxy",          "cog_proxy_edit"),
             ("report_md_path",     "report_md_edit"),
             ("report_figures_dir", "report_figures_edit"),
         ):
-            val = s.value(f"{_SETTINGS_KEY}/{_3d_key}", "")
+            val = s.value(f"{_SETTINGS_KEY}/{_key}", "")
             if val:
-                getattr(self, _3d_attr).setText(val)
-        _es = s.value(f"{_SETTINGS_KEY}/extrude_scale", None)
-        if _es is not None:
-            try: self.extrude_scale_spin.setValue(float(_es))
-            except Exception: pass
-        _er_id = s.value(f"{_SETTINGS_KEY}/elevation_raster_id", "")
-        if _er_id:
-            idx = self.elevation_raster_combo.findData(_er_id)
-            if idx >= 0:
-                self.elevation_raster_combo.setCurrentIndex(idx)
+                getattr(self, _attr).setText(val)
 
         for fld in ("info_title", "info_client", "info_client_img",
                     "info_project_number", "info_project", "info_project_img",
@@ -250,15 +237,9 @@ class WebMapExportDialog(RichTextMixin, ConfigsMixin, MapInfoTabMixin,
             ("feat_minimap",          "feat_minimap_cb"),
             ("feat_fancy_labels",     "feat_fancy_labels_cb"),
             ("feat_changelog",        "feat_changelog_cb"),
-            ("feat_3d",               "feat_3d_cb"),
             ("feat_sketch",           "feat_sketch_cb"),
         ):
             s.setValue(f"{_SETTINGS_KEY}/{flag}", getattr(self, attr).isChecked())
-        s.setValue(f"{_SETTINGS_KEY}/cesium_ion_token", self.cesium_ion_token_edit.text().strip())
-        s.setValue(f"{_SETTINGS_KEY}/google_maps_key",  self.google_maps_key_edit.text().strip())
-        s.setValue(f"{_SETTINGS_KEY}/extrude_field",       self.extrude_field_edit.text().strip())
-        s.setValue(f"{_SETTINGS_KEY}/extrude_scale",       self.extrude_scale_spin.value())
-        s.setValue(f"{_SETTINGS_KEY}/elevation_raster_id", self.elevation_raster_combo.currentData() or "")
         s.setValue(f"{_SETTINGS_KEY}/report_md_path",      self.report_md_edit.text().strip())
         s.setValue(f"{_SETTINGS_KEY}/report_figures_dir",  self.report_figures_edit.text().strip())
         s.setValue(f"{_SETTINGS_KEY}/cog_proxy",           self.cog_proxy_edit.text().strip())
@@ -612,7 +593,7 @@ class WebMapExportDialog(RichTextMixin, ConfigsMixin, MapInfoTabMixin,
         self._nav_seps = []
 
         # Project, Layers and Export settings are always present; the four
-        # capability tabs (Title block / Map Views / Report / 3D) sit between
+        # capability tabs (Title block / Map Views / Report) sit between
         # them and are revealed by their switches on the Project tab — see
         # _update_capability_tabs.
         _tab_defs = [
@@ -621,7 +602,6 @@ class WebMapExportDialog(RichTextMixin, ConfigsMixin, MapInfoTabMixin,
             ("Title block",     self._build_map_info_tab()),
             ("Map Views",       self._build_map_views_tab()),
             ("Report",          self._build_report_tab()),
-            ("3D",              self._build_3d_tab()),
             ("Export settings", self._build_export_settings_tab()),
         ]
         for i, (label, page_widget) in enumerate(_tab_defs):
@@ -645,7 +625,6 @@ class WebMapExportDialog(RichTextMixin, ConfigsMixin, MapInfoTabMixin,
             (self.cap_title_cb, 2),
             (self.cap_views_cb, 3),
             (self.cap_report_cb, 4),
-            (self.feat_3d_cb, 5),
         ]
         self._update_capability_tabs()
         inner_layout.addWidget(nav_bar)

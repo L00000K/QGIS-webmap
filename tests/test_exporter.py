@@ -24,7 +24,6 @@ from intermap.exporter.geometry import _flatten_coords                  # noqa: 
 from intermap.exporter.markers import (                                 # noqa: E402
     _SHAPE_ALIASES, _svg_inner, _uniquify_svg_ids,
 )
-from intermap.exporter.rasters import _dem_grid_size, _dem_quantize     # noqa: E402
 from intermap.exporter.report import (                                  # noqa: E402
     _parse_front_matter, _report_image_refs, _validate_report_refs,
 )
@@ -174,56 +173,6 @@ class StyleHelperTests(unittest.TestCase):
                          "#7f7f7f")
 
 
-class DemTests(unittest.TestCase):
-    def test_grid_size_square(self):
-        self.assertEqual(_dem_grid_size(1.0, 1.0), (512, 512))
-
-    def test_grid_size_wide(self):
-        gw, gh = _dem_grid_size(2.0, 1.0)
-        self.assertEqual(gw, 512)
-        self.assertEqual(gh, 256)
-
-    def test_grid_size_tall(self):
-        gw, gh = _dem_grid_size(1.0, 4.0)
-        self.assertEqual(gh, 512)
-        self.assertEqual(gw, 128)
-
-    def test_grid_size_degenerate_extent(self):
-        gw, gh = _dem_grid_size(0.0, 0.0)
-        self.assertGreaterEqual(gw, 2)
-        self.assertGreaterEqual(gh, 2)
-
-    def test_grid_size_extreme_aspect_clamps_to_two(self):
-        gw, gh = _dem_grid_size(10000.0, 0.0001)
-        self.assertGreaterEqual(gh, 2)
-
-    def test_quantize_round_trip(self):
-        rows = [[0.0, 50.0], [100.0, 25.0]]
-        vmin, vmax, data = _dem_quantize(rows)
-        self.assertEqual((vmin, vmax), (0.0, 100.0))
-        vals = [int.from_bytes(data[i:i + 2], "little")
-                for i in range(0, len(data), 2)]
-        decoded = [vmin + v / 65535.0 * (vmax - vmin) for v in vals]
-        for got, want in zip(decoded, [0.0, 50.0, 100.0, 25.0]):
-            self.assertAlmostEqual(got, want, places=2)
-
-    def test_quantize_nodata_encodes_as_minimum(self):
-        rows = [[10.0, None], [30.0, 20.0]]
-        vmin, _vmax, data = _dem_quantize(rows)
-        self.assertEqual(vmin, 10.0)
-        self.assertEqual(int.from_bytes(data[2:4], "little"), 0)
-
-    def test_quantize_all_nodata(self):
-        vmin, vmax, data = _dem_quantize([[None, None]])
-        self.assertEqual((vmin, vmax), (0.0, 0.0))
-        self.assertEqual(data, b"\x00\x00\x00\x00")
-
-    def test_quantize_flat_grid_no_divide_by_zero(self):
-        vmin, vmax, data = _dem_quantize([[5.0, 5.0]])
-        self.assertEqual(vmin, 5.0)
-        self.assertEqual(len(data), 4)
-
-
 class FrontMatterTests(unittest.TestCase):
     def test_title_and_autolink(self):
         meta, body = _parse_front_matter(
@@ -321,16 +270,15 @@ class PdfReportTests(unittest.TestCase):
 
     def test_view_opts_parsing(self):
         from intermap.exporter.report import _parse_view_opts
-        self.assertEqual(_parse_view_opts("3d pitch=-35 heading=120"),
-                         {"mode3d": True, "pitch": -35.0, "heading": 120.0})
+        self.assertEqual(_parse_view_opts("zoom=14 pad=0.2"),
+                         {"zoom": 14.0, "pad": 0.2})
         self.assertEqual(_parse_view_opts(""), {})
-        self.assertEqual(_parse_view_opts("pitch=abc junk"), {})
+        self.assertEqual(_parse_view_opts("zoom=abc junk"), {})
 
     def test_binding_opts_passed_through(self):
         p = self._build([{"page": 2, "view": "Overview",
-                          "opts": "3d pitch=-30"}])
-        self.assertEqual(p["bindings"][0]["opts"],
-                         {"mode3d": True, "pitch": -30.0})
+                          "opts": "zoom=15"}])
+        self.assertEqual(p["bindings"][0]["opts"], {"zoom": 15.0})
 
     def test_binding_without_opts_has_no_opts_key(self):
         p = self._build([{"page": 2, "view": "Overview", "opts": "  "}])
