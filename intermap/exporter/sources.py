@@ -48,6 +48,88 @@ def _has_xyz_template(url: str) -> bool:
     return all(ph in low for ph in _XYZ_PLACEHOLDERS)
 
 
+_CAPS_CACHE = {}
+
+
+def _fetch(url: str, timeout_ms: int = 8000) -> str:
+    """GET a URL as text, through QGIS's network stack so proxies apply."""
+    try:
+        from qgis.core import QgsBlockingNetworkRequest
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtNetwork import QNetworkRequest
+        req = QgsBlockingNetworkRequest()
+        qreq = QNetworkRequest(QUrl(url))
+        if req.get(qreq) != 0:
+            return ""
+        return bytes(req.reply().content()).decode("utf-8", "replace")
+    except Exception:
+        pass
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=timeout_ms / 1000.0) as fh:
+            return fh.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def _wms_advertised_crs(url: str) -> set:
+    """Every CRS a WMS advertises, upper-cased, or an empty set on failure.
+
+    Read from GetCapabilities at export time. A server's root CRS list is
+    inherited by all its layers, so the union is the right question to ask.
+    """
+    base = (url or "").split("?")[0]
+    if not base:
+        return set()
+    if base in _CAPS_CACHE:
+        return _CAPS_CACHE[base]
+
+    sep = "&" if "?" in url else "?"
+    caps = _fetch(url + sep + "SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0")
+    found = set()
+    if caps:
+        # Tag names carry a namespace in 1.3.0, so match the text directly
+        # rather than parsing the whole document.
+        for m in re.finditer(r"<(?:\w+:)?(?:CRS|SRS)>([^<]+)</(?:\w+:)?(?:CRS|SRS)>",
+                             caps, re.IGNORECASE):
+            for token in m.group(1).split():
+                found.add(token.strip().upper())
+    _CAPS_CACHE[base] = found
+    return found
+
+
+def _best_wms_crs(url: str, declared: str) -> tuple:
+    """Pick the CRS to request a WMS in, and say why.
+
+    A web map is Web Mercator, so a layer in anything else has to be
+    reprojected by the server. Asking for a CRS the server does not advertise
+    is how a layer ends up drawn in the wrong place: some servers ignore the
+    request and answer in their own projection instead. Ask for one it
+    actually lists, preferring the map's own projection.
+    """
+    if _is_mercator_matrix_set(declared):
+        return declared, ""
+    advertised = _wms_advertised_crs(url)
+    if not advertised:
+        # Offline, or the service did not answer. EPSG:3857 stays the request,
+        # which is what it always was — but say that it is unverified.
+        return "EPSG:3857", (
+            "could not read the service's capabilities to confirm which "
+            "projections it supports, so the export asks for EPSG:3857. If "
+            "the layer draws shifted, the service is answering in %s instead."
+            % declared
+        )
+    for candidate in ("EPSG:3857", "EPSG:900913", "EPSG:4326", "CRS:84"):
+        if candidate in advertised:
+            return candidate, ""
+    return declared, (
+        "the service does not advertise EPSG:3857 or EPSG:4326, only %s, and "
+        "a web map cannot reproject those tiles itself. Ask for the layer to "
+        "be published in Web Mercator, or bring it in as a vector layer."
+        % declared
+    )
+
+
 def _parse_wms_source(layer) -> Optional[dict]:
     """
     If layer is a WMS/WMTS/XYZ raster layer, return a dict describing how to
@@ -104,20 +186,15 @@ def _parse_wms_source(layer) -> Optional[dict]:
             )
         return out
 
-    if ttype == "wms" and not _is_mercator_matrix_set(crs):
-        # A web map is Web Mercator. A WMS in any other projection is fetched
-        # by asking the server for EPSG:3857 and letting it reproject — which
-        # works, until a server quietly ignores the requested CRS and returns
-        # its native one. The image then lands in the right place on the page
-        # and the wrong place on the ground, which is a slight, easily-missed
-        # shift rather than an obvious failure. Nothing client-side can detect
-        # that, so say up front which layers depend on it.
-        out["exportNote"] = (
-            "layer is in %s, so the web map asks the service to reproject it "
-            "to EPSG:3857. If it draws shifted, the service is not honouring "
-            "that — check it advertises EPSG:3857, or re-publish the layer in "
-            "Web Mercator." % crs
-        )
+    if ttype == "wms":
+        # Ask the service for a projection it actually advertises, rather than
+        # assuming Web Mercator and hoping. Requesting an unsupported CRS is
+        # how a layer ends up drawn in the wrong place.
+        best, note = _best_wms_crs(url, crs)
+        out["wmsCrs"] = best
+        out["wmsSourceCrs"] = crs
+        if note:
+            out["exportNote"] = note
         return out
 
     if ttype == "wmts":

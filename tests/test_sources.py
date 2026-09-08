@@ -12,10 +12,17 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, "qgis_mock"))
 sys.path.insert(0, os.path.dirname(_HERE))
 
+from intermap.exporter import sources as _src                     # noqa: E402
 from intermap.exporter.sources import (            # noqa: E402
-    _has_xyz_template, _is_mercator_matrix_set, _parse_wms_source,
-    _wms_legend_url, _wmts_kvp_base,
+    _best_wms_crs, _has_xyz_template, _is_mercator_matrix_set,
+    _parse_wms_source, _wms_legend_url, _wmts_kvp_base,
 )
+
+
+def _stub_caps(monkey_value):
+    """Replace the GetCapabilities fetch with a canned document."""
+    _src._CAPS_CACHE.clear()
+    _src._fetch = lambda *a, **k: monkey_value
 
 
 class _FakeProvider:
@@ -74,28 +81,70 @@ class XyzTemplateTests(unittest.TestCase):
 
 
 class WmsParseTests(unittest.TestCase):
-    def test_keeps_the_layers_own_crs(self):
-        # A BGS service in British National Grid: the CRS has to survive to
-        # the browser, which is what makes the request unambiguous.
+    def test_records_the_layers_own_crs_alongside_the_requested_one(self):
+        # A BGS service in British National Grid. wmsCrs is what the export
+        # asks the service for; wmsSourceCrs is what QGIS had.
+        _stub_caps("<WMS_Capabilities><CRS>EPSG:27700</CRS></WMS_Capabilities>")
         ld = _parse_wms_source(_FakeLayer(
             "crs=EPSG:27700&format=image/png&layers=GeoSure&styles=&"
             "url=https://map.bgs.ac.uk/arcgis/services/GeoSure/MapServer/WMSServer"))
-        self.assertEqual(ld["wmsCrs"], "EPSG:27700")
+        self.assertEqual(ld["wmsSourceCrs"], "EPSG:27700")
         self.assertEqual(ld["tileType"], "wms")
-
-    def test_a_non_mercator_wms_says_it_depends_on_the_server(self):
-        # It still draws — the server is asked to reproject — but a server that
-        # ignores the request shifts the layer silently, so flag it.
-        ld = _parse_wms_source(_FakeLayer(
-            "crs=EPSG:27700&layers=GeoSure&url=https://h/WMSServer"))
-        self.assertIn("exportNote", ld)
-        self.assertIn("EPSG:27700", ld["exportNote"])
-        self.assertIn("3857", ld["exportNote"])
+        _src._CAPS_CACHE.clear()
 
     def test_a_mercator_wms_needs_no_note(self):
         ld = _parse_wms_source(_FakeLayer(
             "crs=EPSG:3857&layers=X&url=https://h/WMSServer"))
         self.assertNotIn("exportNote", ld)
+
+
+class WmsCrsNegotiationTests(unittest.TestCase):
+    """A layer in British National Grid has to be requested in something the
+    service actually advertises, or it can come back in the wrong projection."""
+
+    _CAPS = ("<WMS_Capabilities><Layer><CRS>%s</CRS></Layer></WMS_Capabilities>")
+
+    def tearDown(self):
+        _src._CAPS_CACHE.clear()
+
+    def test_prefers_web_mercator_when_offered(self):
+        _stub_caps(self._CAPS % "EPSG:27700</CRS><CRS>EPSG:4326</CRS><CRS>EPSG:3857")
+        crs, note = _best_wms_crs("https://h/wms", "EPSG:27700")
+        self.assertEqual(crs, "EPSG:3857")
+        self.assertEqual(note, "")
+
+    def test_falls_back_to_4326_when_mercator_is_missing(self):
+        # The real fix for a BNG service: Leaflet can request EPSG:4326 on a
+        # Web Mercator map, so this draws correctly instead of being shifted.
+        _stub_caps(self._CAPS % "EPSG:27700</CRS><CRS>EPSG:4326")
+        crs, note = _best_wms_crs("https://h/wms", "EPSG:27700")
+        self.assertEqual(crs, "EPSG:4326")
+        self.assertEqual(note, "")
+
+    def test_reports_a_service_that_offers_neither(self):
+        _stub_caps(self._CAPS % "EPSG:27700")
+        crs, note = _best_wms_crs("https://h/wms", "EPSG:27700")
+        self.assertEqual(crs, "EPSG:27700")
+        self.assertIn("does not advertise", note)
+
+    def test_unreachable_service_still_exports_and_says_so(self):
+        _stub_caps("")
+        crs, note = _best_wms_crs("https://h/wms", "EPSG:27700")
+        self.assertEqual(crs, "EPSG:3857")
+        self.assertIn("capabilities", note)
+
+    def test_a_mercator_layer_is_not_renegotiated(self):
+        _stub_caps("")          # would fail if it tried to fetch
+        crs, note = _best_wms_crs("https://h/wms", "EPSG:3857")
+        self.assertEqual(crs, "EPSG:3857")
+        self.assertEqual(note, "")
+
+    def test_the_source_crs_is_kept_for_reference(self):
+        _stub_caps(self._CAPS % "EPSG:27700</CRS><CRS>EPSG:4326")
+        ld = _parse_wms_source(_FakeLayer(
+            "crs=EPSG:27700&layers=GeoSure&url=https://h/WMSServer"))
+        self.assertEqual(ld["wmsCrs"], "EPSG:4326")
+        self.assertEqual(ld["wmsSourceCrs"], "EPSG:27700")
 
     def test_non_wms_provider_is_not_a_remote_service(self):
         self.assertIsNone(_parse_wms_source(_FakeLayer("/data/dem.tif", name="gdal")))
