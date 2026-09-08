@@ -245,6 +245,12 @@
   .legend-entry.class-hidden .legend-swatch { opacity: 0.35; }
   .legend-swatch svg { display: block; }
   .legend-layer.hidden .legend-layer-name { opacity: 0.45; }
+  /* A layer whose tiles the service is refusing. */
+  .legend-tile-warn {
+    flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%;
+    background: #D93025; color: #fff; font-size: 10px; font-weight: 700;
+    line-height: 14px; text-align: center; cursor: help;
+  }
   .qgis-marker { background: none; border: none; }
 
   /* ── Legend group styles ──────────────────────────────────────────── */

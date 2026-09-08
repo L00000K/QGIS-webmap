@@ -159,6 +159,17 @@ def _parse_wms_source(layer) -> Optional[dict]:
     matrix_set = (params.get("tileMatrixSet") or params.get("tilematrixset")
                   or [""])[0]
 
+    # Zoom limits QGIS recorded for the service. Without them a web map will
+    # happily request tile levels the service does not publish, get nothing
+    # back, and show an empty layer at exactly the zoom people work at.
+    def _int_param(name):
+        try:
+            return int((params.get(name) or [""])[0])
+        except (TypeError, ValueError):
+            return None
+
+    zmin, zmax = _int_param("zmin"), _int_param("zmax")
+
     ttype = (params.get("type") or [""])[0].lower()
     # QGIS records a WMTS connection by its capabilities URL plus a
     # tileMatrixSet, and sets no type= at all — so a WMTS layer used to fall
@@ -176,6 +187,10 @@ def _parse_wms_source(layer) -> Optional[dict]:
         "wmsVersion": version,
         "tileType":   ttype,
     }
+    if zmin is not None:
+        out["tileMinZoom"] = zmin
+    if zmax is not None:
+        out["tileMaxZoom"] = zmax
 
     if ttype == "xyz":
         # An XYZ layer is only usable if the URL really is a tile template.

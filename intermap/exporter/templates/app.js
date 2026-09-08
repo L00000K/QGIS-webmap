@@ -730,7 +730,13 @@
                    + 'template and cannot be drawn.');
         return L.layerGroup([]);
       }
-      return L.tileLayer(ld.wmsUrl, { pane: item.paneName, maxZoom: 23, opacity: op });
+      var tileOpts = { pane: item.paneName, maxZoom: 23, opacity: op };
+      // Past a service's deepest published level every request 404s and the
+      // layer goes blank — at exactly the zoom people work at. Cap the levels
+      // actually requested and let Leaflet scale the last real one up.
+      if (ld.tileMaxZoom != null) tileOpts.maxNativeZoom = ld.tileMaxZoom;
+      if (ld.tileMinZoom != null) tileOpts.minZoom = ld.tileMinZoom;
+      return _watchTiles(L.tileLayer(ld.wmsUrl, tileOpts), item);
     }
 
     // The CRS was parsed at export and then dropped here, so every WMS was
@@ -738,7 +744,7 @@
     // that silently returns its native projection, which lands the image in
     // the right place on the page but the wrong place on the ground.
     var crs = _WMS_CRS[String(ld.wmsCrs || '').toUpperCase()] || L.CRS.EPSG3857;
-    return L.tileLayer.wms(ld.wmsUrl, {
+    return _watchTiles(L.tileLayer.wms(ld.wmsUrl, {
       layers:      ld.wmsLayers,
       format:      ld.wmsFormat  || 'image/png',
       styles:      ld.wmsStyles  || '',
@@ -748,8 +754,50 @@
       opacity:     op,
       pane:        item.paneName,
       maxZoom:     23
-    });
+    }), item);
   }
+
+  // ── Tile failure reporting ────────────────────────────────────────────────
+  // A remote service that refuses a request leaves a blank layer and no clue
+  // why — the layer is listed, the box is ticked, and nothing draws. Watch for
+  // failures, remember the first URL, and mark the layer in the panel so the
+  // problem is visible and quotable instead of invisible.
+  function _watchTiles(lyr, item) {
+    if (!lyr || !lyr.on) return lyr;
+    lyr.on('tileerror', function(e) {
+      item.tileErrors = (item.tileErrors || 0) + 1;
+      if (!item.tileErrorUrl) {
+        item.tileErrorUrl = (e && e.tile && e.tile.src) || '(unknown URL)';
+        console.warn('InterMap: layer "' + item.ld.name + '" — the service did '
+                   + 'not return this tile:\n  ' + item.tileErrorUrl
+                   + '\nOpen that URL directly to see what it says.');
+      }
+      _flagLayerRow(item);
+    });
+    lyr.on('tileload', function() { item.tileOk = (item.tileOk || 0) + 1; });
+    return lyr;
+  }
+
+  function _flagLayerRow(item) {
+    if (!item.layerDiv || item._tileFlag) return;
+    var name = item.layerDiv.querySelector('.legend-layer-name');
+    if (!name) return;
+    var flag = document.createElement('span');
+    flag.className = 'legend-tile-warn';
+    flag.textContent = '!';
+    flag.title = 'This layer\u2019s tiles are not loading. First failed request:\n'
+               + (item.tileErrorUrl || '') + '\nSee the browser console for details.';
+    name.parentNode.insertBefore(flag, name.nextSibling);
+    item._tileFlag = flag;
+  }
+
+  window._imTileReport = function() {
+    return legendItems.filter(function(i) { return i.tileErrors; })
+      .map(function(i) {
+        return { layer: i.ld.name, failed: i.tileErrors, loaded: i.tileOk || 0,
+                 firstFailure: i.tileErrorUrl };
+      });
+  };
 
   // ── Cloud Optimized GeoTIFF (remote raster on blob storage) ─────────────
   // Loaded client-side via geotiff.js + georaster-layer-for-leaflet, which
