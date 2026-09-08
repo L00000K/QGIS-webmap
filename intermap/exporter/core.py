@@ -88,7 +88,7 @@ class WebMapExporter:
             self.progress(step)
 
             if layer.type() == LAYER_TYPE_VECTOR:
-                geojson = _layer_to_geojson(layer)
+                geojson = _layer_to_geojson(layer, self.export_notes)
                 style_map = _build_style_map(layer)
                 geom_type = _geom_type_str(layer)
                 ldef: dict = {

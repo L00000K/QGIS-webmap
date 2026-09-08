@@ -147,3 +147,83 @@ class WmtsParseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _FakeCrs:
+    def __init__(self, authid): self._a = authid
+    def authid(self): return self._a
+
+
+class _FakeGeom:
+    """Geometry whose transform can be made to succeed or fail."""
+    def __init__(self, ok=True): self._ok = ok
+    def isEmpty(self): return False
+    def transform(self, _t): return 0 if self._ok else 1
+    def asJson(self): return '{"type":"Point","coordinates":[0,0]}'
+
+
+class _FakeFeat:
+    def __init__(self, geom): self._g = geom
+    def geometry(self): return self._g
+    def attributes(self): return ["a"]
+    def attributeMap(self): return {"n": "a"}
+
+
+class _FakeFields:
+    def __getitem__(self, i):
+        class _F:
+            def name(self_inner): return "n"
+        return _F()
+
+
+class _FakeVector:
+    def __init__(self, feats, authid="EPSG:27700", name="Hex grid"):
+        self._f, self._crs, self._name = feats, _FakeCrs(authid), name
+    def crs(self): return self._crs
+    def name(self): return self._name
+    def fields(self): return _FakeFields()
+    def getFeatures(self, _req=None): return list(self._f)
+
+
+class VectorReprojectionTests(unittest.TestCase):
+    """A vector layer that shifts relative to another is a datum problem.
+
+    Every layer sharing a source CRS moves together, so a ballpark transform
+    is invisible until it is compared with a layer in a different CRS — which
+    is exactly how it gets found: a site landing in the wrong grid cell.
+    """
+
+    def _run(self, layer, fallback=False):
+        from intermap.exporter import geometry as g
+        notes = []
+        orig_ct, orig_fb = g.QgsCoordinateTransform, g._transform_used_a_fallback
+        g.QgsCoordinateTransform = lambda *a, **k: object()
+        g._transform_used_a_fallback = lambda _t: fallback
+        try:
+            out = g._layer_to_geojson(layer, notes)
+        finally:
+            g.QgsCoordinateTransform, g._transform_used_a_fallback = orig_ct, orig_fb
+        return out, notes
+
+    def test_a_clean_reprojection_says_nothing(self):
+        out, notes = self._run(_FakeVector([_FakeFeat(_FakeGeom(True))]))
+        self.assertEqual(len(out["features"]), 1)
+        self.assertEqual(notes, [])
+
+    def test_a_ballpark_datum_transform_is_reported(self):
+        _out, notes = self._run(_FakeVector([_FakeFeat(_FakeGeom(True))]),
+                                fallback=True)
+        self.assertEqual(len(notes), 1)
+        name, why = notes[0]
+        self.assertEqual(name, "Hex grid")
+        self.assertIn("EPSG:27700", why)
+        self.assertIn("100 m", why)
+
+    def test_failed_transforms_are_dropped_not_shipped_wrong(self):
+        # Untransformed geometry would be projected metres read as degrees,
+        # landing the feature far off the map with no clue why.
+        out, notes = self._run(_FakeVector([_FakeFeat(_FakeGeom(False)),
+                                            _FakeFeat(_FakeGeom(True))]))
+        self.assertEqual(len(out["features"]), 1)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("1 feature", notes[0][1])

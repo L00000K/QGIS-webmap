@@ -6,13 +6,40 @@ from qgis.core import QgsCoordinateTransform, QgsFeatureRequest, QgsProject, Qgs
 from .compat import _WGS84
 
 
-def _layer_to_geojson(layer) -> dict:
-    """Reproject and convert vector layer to GeoJSON dict."""
+def _transform_used_a_fallback(transform) -> bool:
+    """Did QGIS reproject with a ballpark operation rather than a real one?
+
+    When PROJ has no proper datum transformation available it falls back to a
+    "ballpark" one, which for OSGB36 (EPSG:27700) to WGS84 is out by roughly
+    100 m across Britain. Every layer sharing that source CRS shifts together,
+    so nothing looks wrong until it is compared against a layer in a different
+    CRS — at which point the two disagree by that 100 m.
+    """
+    for name in ("fallbackOperationOccurred", "isShortCircuited"):
+        probe = getattr(transform, name, None)
+        if probe is None:
+            continue
+        try:
+            if name == "fallbackOperationOccurred" and probe():
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _layer_to_geojson(layer, notes=None) -> dict:
+    """Reproject and convert vector layer to GeoJSON dict.
+
+    `notes` collects (layer name, reason) for anything that could move the
+    data, so the export can report it rather than leaving it to be spotted by
+    eye against another layer.
+    """
     transform = QgsCoordinateTransform(
         layer.crs(), _WGS84, QgsProject.instance()
     )
 
     features = []
+    failed = 0
     for feat in layer.getFeatures(QgsFeatureRequest()):
         geom = feat.geometry()
         if geom is None or geom.isEmpty():
@@ -20,7 +47,16 @@ def _layer_to_geojson(layer) -> dict:
             features.append({"type": "Feature", "geometry": None, "properties": props})
             continue
 
-        geom.transform(transform)
+        # A failed transform used to be ignored, which shipped the geometry in
+        # its source coordinates — projected metres read as degrees, landing
+        # the feature off the map entirely.
+        try:
+            result = geom.transform(transform)
+        except Exception:
+            result = -1
+        if result:                      # 0 / Success is the only good answer
+            failed += 1
+            continue
         geom_json = json.loads(geom.asJson())
 
         props = {}
@@ -40,6 +76,19 @@ def _layer_to_geojson(layer) -> dict:
             "properties": props,
         })
 
+    if notes is not None:
+        if failed:
+            notes.append((layer.name(),
+                          "%d feature%s could not be reprojected to WGS-84 and "
+                          "were left out of the export." %
+                          (failed, "" if failed == 1 else "s")))
+        if _transform_used_a_fallback(transform):
+            notes.append((layer.name(),
+                          "reprojected from %s with a fallback (ballpark) datum "
+                          "transformation, which can be ~100 m out. Install the "
+                          "grid shift files for this CRS, or set a datum "
+                          "transform in Project Properties > CRS, then re-export."
+                          % (layer.crs().authid() or "its CRS")))
     return {"type": "FeatureCollection", "features": features}
 
 
