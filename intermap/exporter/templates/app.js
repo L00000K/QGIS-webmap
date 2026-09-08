@@ -701,18 +701,49 @@
     });
   }
 
+  // Leaflet can only ask a WMS for a projection it knows how to compute a
+  // bounding box in. Anything else (EPSG:27700 and friends) has to be
+  // requested as Web Mercator and reprojected by the server.
+  var _WMS_CRS = {
+    'EPSG:3857':   L.CRS.EPSG3857,
+    'EPSG:900913': L.CRS.EPSG3857,
+    'EPSG:102100': L.CRS.EPSG3857,
+    'EPSG:4326':   L.CRS.EPSG4326,
+    'CRS:84':      L.CRS.EPSG4326,
+    'EPSG:3395':   L.CRS.EPSG3395
+  };
+
   function buildWmsLayer(item) {
     var ld = item.ld;
     var op = (ld.opacity != null) ? ld.opacity : 1;
-    // XYZ and WMTS tile services use a URL template — serve directly as tile layer
+
+    if (ld.exportNote) {
+      console.warn('InterMap: layer "' + ld.name + '" — ' + ld.exportNote);
+    }
+
+    // XYZ and WMTS both resolve to a {z}/{x}/{y} template by export time.
     if (ld.tileType === 'xyz' || ld.tileType === 'wmts') {
+      if (String(ld.wmsUrl).indexOf('{z}') === -1) {
+        // Without placeholders every tile request would hit the same URL and
+        // nothing would draw — say so rather than showing an empty layer.
+        console.warn('InterMap: layer "' + ld.name + '" has no usable tile URL '
+                   + 'template and cannot be drawn.');
+        return L.layerGroup([]);
+      }
       return L.tileLayer(ld.wmsUrl, { pane: item.paneName, maxZoom: 23, opacity: op });
     }
+
+    // The CRS was parsed at export and then dropped here, so every WMS was
+    // fetched in whatever Leaflet defaulted to. A server that does not honour
+    // that silently returns its native projection, which lands the image in
+    // the right place on the page but the wrong place on the ground.
+    var crs = _WMS_CRS[String(ld.wmsCrs || '').toUpperCase()] || L.CRS.EPSG3857;
     return L.tileLayer.wms(ld.wmsUrl, {
       layers:      ld.wmsLayers,
       format:      ld.wmsFormat  || 'image/png',
       styles:      ld.wmsStyles  || '',
       version:     ld.wmsVersion || '1.1.1',
+      crs:         crs,
       transparent: true,
       opacity:     op,
       pane:        item.paneName,

@@ -573,18 +573,29 @@ class ExportTabMixin:
             self._save_settings()
             if self.save_config_on_export_cb.isChecked():
                 self._instance_save()
-            self._show_success(output_path)
+            self._show_success(output_path, getattr(exporter, "export_notes", []))
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
         finally:
             self.export_btn.setEnabled(True)
             self.progress.setVisible(False)
 
-    def _show_success(self, output_path):
+    def _show_success(self, output_path, notes=None):
         msg = QMessageBox(self)
         msg.setWindowTitle("Export complete")
-        msg.setIcon(QMessageBox.Icon.Information)
         msg.setText(f"Web map exported successfully to:\n{output_path}")
+        if notes:
+            # A remote service the web map cannot draw is worth hearing about
+            # now, not after someone opens the file and finds a layer missing
+            # or in the wrong place.
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setInformativeText(
+                "%d layer%s may not appear as expected."
+                % (len(notes), "" if len(notes) == 1 else "s"))
+            msg.setDetailedText("\n\n".join(
+                "%s:\n  %s" % (name, note) for name, note in notes))
+        else:
+            msg.setIcon(QMessageBox.Icon.Information)
         open_btn = msg.addButton("Open in Browser", QMessageBox.ButtonRole.ActionRole)
         msg.addButton(QMessageBox.StandardButton.Ok)
         msg.exec()

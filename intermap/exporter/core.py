@@ -74,6 +74,10 @@ class WebMapExporter:
         self.report_pdf_path = (report_pdf_path or '').strip()
         self.report_pdf_bindings = report_pdf_bindings or []
         self.cog_proxy = (cog_proxy or '').strip()
+        # Layers the export cannot reproduce faithfully, as
+        # [(layer name, reason)]. Filled during export() and read by the
+        # dialog so the user hears about it there and not from an empty map.
+        self.export_notes = []
 
     def export(self):
         layer_defs = []
@@ -119,6 +123,8 @@ class WebMapExporter:
                     legend_url = _wms_legend_url(wms)
                     if legend_url:
                         wms_def["legendUrl"] = legend_url
+                    if wms.get("exportNote"):
+                        self.export_notes.append((layer.name(), wms["exportNote"]))
                     layer_defs.append(wms_def)
                     continue
 
